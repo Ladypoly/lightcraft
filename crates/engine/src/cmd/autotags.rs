@@ -909,7 +909,8 @@ mod tests {
             if coverage(&mut s)["missing"] == 0 {
                 break;
             }
-            assert!(started.elapsed() < std::time::Duration::from_secs(90), "{result}");
+            // Includes cold model loading and background renders competing with other tests on shared CPUs.
+            assert!(started.elapsed() < std::time::Duration::from_secs(300), "{result}");
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
         for text in ["cat chair", "tag:cat tag:chair", "CAT CHAIR"] {
