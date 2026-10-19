@@ -17,6 +17,7 @@ extern crate lightcraft_denoise_core as lightcraft_denoise;
 pub mod activity;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod apple_photos;
+pub mod autotag;
 pub mod availability;
 pub(crate) mod camera_preview;
 pub mod camera_profiles;
@@ -249,6 +250,7 @@ pub struct Session {
     pub face_models_dir: Option<std::path::PathBuf>,
     /// Face model downloads started this session (the staged files wait in `<face_models_dir>/.downloads`).
     pub face_downloads: face_download::Downloads,
+    pub tagging: autotag::State,
     /// Reverse geocoding: the parsed place names and their download (`metadata.*PlaceNames`).
     pub place_names: cmd::geocode::PlaceNames,
     /// The user's own list of models to download (`catalog.json` in the models folder), as last read.
@@ -436,6 +438,7 @@ impl Session {
             skip_auto_write: false,
             unsaved_sidecars: Default::default(),
             denoise: Default::default(),
+            tagging: autotag::State { dir: config::default_tag_models_dir(), ..Default::default() },
             face_models_dir: None,
             face_downloads: Default::default(),
             place_names: Default::default(),

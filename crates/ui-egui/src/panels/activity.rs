@@ -62,7 +62,9 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
     }
     // look again soon: a young task becomes due, bars move
     ctx.request_repaint_after(std::time::Duration::from_millis(100));
-    let tasks: Vec<&TaskInfo> = all.iter().filter(|t| t.age_ms >= SHOW_AFTER_MS).collect();
+    // Show one tagging indicator, with a reachable Cancel even when its sidebar section is hidden.
+    let inline_tags = ctx.data(|d| d.get_temp::<u64>(egui::Id::new("tags-inline-progress-frame"))) == Some(ctx.cumulative_frame_nr());
+    let tasks: Vec<&TaskInfo> = all.iter().filter(|t| (!inline_tags || t.kind != "tags") && t.age_ms >= SHOW_AFTER_MS).collect();
     if tasks.is_empty() {
         return;
     }
@@ -147,7 +149,7 @@ fn row(ui: &mut egui::Ui, t: &Tokens, task: &TaskInfo, width: f32) -> bool {
 }
 
 /// The progress bar; while the amount of work isn't known, a segment sweeps across.
-fn bar(ui: &mut egui::Ui, t: &Tokens, task: &TaskInfo, width: f32) {
+pub(super) fn bar(ui: &mut egui::Ui, t: &Tokens, task: &TaskInfo, width: f32) -> Rect {
     let (rect, _) = ui.allocate_exact_size(vec2(width, 5.0), Sense::hover());
     let p = ui.painter();
     p.rect_filled(rect, 2.5, t.field);
@@ -163,4 +165,5 @@ fn bar(ui: &mut egui::Ui, t: &Tokens, task: &TaskInfo, width: f32) {
     if fill.width() > 0.0 {
         p.rect_filled(fill, 2.5, if task.cancelling { t.text_dim } else { t.accent });
     }
+    rect
 }

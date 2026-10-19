@@ -203,6 +203,7 @@ impl Library {
 #[derive(Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 struct PrefsFile {
+    automatic_keywords: crate::autotag::Settings,
     xmp: crate::sidecar::XmpPrefs,
     /// Parameters of the last export (for Export with Previous).
     #[serde(alias = "last_export")]
@@ -492,6 +493,11 @@ impl Session {
         let mut settings = SettingsLoad::default();
         // preferences
         let prefs = settings.read::<PrefsFile>(files.as_mut(), "prefs.json").unwrap_or_default();
+        self.tagging.settings = prefs.automatic_keywords.checked();
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.tagging.scan = Default::default();
+        }
         self.xmp = prefs.xmp;
         self.last_export = prefs.last_export;
         self.last_merge = prefs.last_merge;
@@ -747,6 +753,7 @@ impl Session {
     /// Save the library preferences (no-op for in-memory sessions).
     pub fn save_prefs(&mut self) -> Result<()> {
         let v = serde_json::to_vec_pretty(&PrefsFile {
+            automatic_keywords: self.tagging.settings.clone(),
             xmp: self.xmp,
             last_export: self.last_export.clone(),
             last_merge: self.last_merge.clone(),

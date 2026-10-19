@@ -971,6 +971,8 @@ fn main() -> eframe::Result {
                 let mut app = LightcraftApp::new(session, services(cc, app_log_file.as_deref()));
                 if let Some(ui) = prefs {
                     app.ui = ui;
+                    // Restore the displayed search before current-view background jobs can start.
+                    let _ = app.run("library.filter", serde_json::json!({"text": app.ui.search}));
                 }
                 lightcraft_ui_egui::i18n::set_language(app.ui.language);
                 app.integrated_titlebar = cfg!(target_os = "macos");

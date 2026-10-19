@@ -31,6 +31,47 @@ pub fn photo_summary(p: &Photo) -> Value {
     })
 }
 
+/// Current catalog values, which can differ from embedded file metadata until explicitly written.
+fn catalog_metadata(photo: &Photo) -> Vec<Value> {
+    let m = &photo.meta;
+    let mut rows: Vec<_> = [
+        ("Title", &m.title),
+        ("Caption", &m.caption),
+        ("Alt Text", &m.alt_text),
+        ("Extended Description", &m.extended_description),
+        ("Creator", &m.creator),
+        ("Copyright", &m.copyright),
+        ("Rights Usage Terms", &m.usage_terms),
+        ("Copyright Info URL", &m.copyright_url),
+        ("Location", &m.location),
+        ("City", &m.city),
+        ("State / Province", &m.state),
+        ("Country", &m.country),
+    ]
+    .into_iter()
+    .filter(|(_, value)| !value.is_empty())
+    .map(|(name, value)| json!({"name":name,"value":value}))
+    .collect();
+    if !m.keywords.is_empty() {
+        rows.push(json!({"name":"Keywords","value":m.keywords.join("; ")}));
+    }
+    let tags: Vec<_> = photo.suggested_tags().map(|tag| tag.name.as_str()).collect();
+    if !tags.is_empty() {
+        rows.push(json!({"name":"AI tags","value":tags.join("; ")}));
+        let mut models: Vec<_> = photo
+            .suggested_tags()
+            .map(|tag| {
+                let id = tag.model.split('@').next().unwrap_or(&tag.model);
+                lightcraft_autotag::model(id).or_else(|| lightcraft_autotag::detector(id)).map_or(id, |model| model.name)
+            })
+            .collect();
+        models.sort_unstable();
+        models.dedup();
+        rows.push(json!({"name":"AI tag models","value":models.join("; ")}));
+    }
+    rows
+}
+
 /// How deep [`album_json`] lists folders inside folders: a catalog that loops (an album inside
 /// itself, which [`lightcraft_catalog::Catalog::repair`] puts right on load) lists no further
 /// instead of overflowing the stack.
@@ -124,11 +165,12 @@ pub fn specs() -> Vec<CommandSpec> {
                 "clipboard": s.clipboard.is_some(),
             }))
         }),
-        cmd!(query "photo.allMetadata", "All Metadata", [], None, "{id?} → {exif: [{group, tag, name, value}], xmp: [{name, value}]} — every EXIF / TIFF / GPS tag of the file and its XMP properties", always, |s, p| {
+        cmd!(query "photo.allMetadata", "All Metadata", [], None, "{id?} → {catalog, exif, xmp, pngText, generation} — EXIF / TIFF / GPS, XMP, embedded PNG text and readable ComfyUI generation fields", always, |s, p| {
             let id = photo_arg(s, p, "photo.allMetadata")?;
             let ph = s.catalog.photo(id).ok_or_else(|| super::bad("photo.allMetadata", "no such photo"))?.clone();
+            let catalog=catalog_metadata(&ph);
             let lightcraft_catalog::Source::File { path } = &ph.source else {
-                return Ok(json!({"exif": [], "xmp": [], "note": "a generated demo photo has no file"}));
+                return Ok(json!({"catalog":catalog,"exif": [], "xmp": [], "note": "a generated demo photo has no file"}));
             };
             let bytes = match &s.media.file_bytes {
                 Some(r) => r(path),
@@ -145,7 +187,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 .and_then(|x| lightcraft_meta::parse_xmp(&x).ok())
                 .map(|d| d.properties.into_iter().filter(|(k, _)| !k.starts_with("lc:")).map(|(k, v)| json!({"name": k, "value": v.join("; ")})).collect())
                 .unwrap_or_default();
-            Ok(json!({"exif": exif, "xmp": xmp}))
+            Ok(json!({"catalog":catalog,"exif":exif,"xmp":xmp}))
         }),
         cmd!(query "albums.list", "List Albums", [], None, "{}", always, |s, _| {
             let all: Vec<Album> = s.catalog.albums().cloned().collect();
