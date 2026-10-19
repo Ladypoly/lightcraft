@@ -281,19 +281,31 @@ pub(crate) fn as_shot_wb_op(id: lightcraft_catalog::PhotoId, ph: &lightcraft_cat
     (ph.develops_raw() && !ph.relative_wb() && ph.as_shot_wb != Some(read)).then_some(Op::SetAsShotWb { id, wb: Some(read) })
 }
 
-/// The ops that bring photo `id` and its virtual copies up to date with what their file is now
-/// (`info`, a fresh probe), appended to `ops`; the photos they change are appended to `changed`.
-/// Reload and the preview-only recheck (`library.recheckPreviewOnly`) share it.
+/// Group copies once per refresh batch, so reindexing N originals does not scan N photos N times.
+pub(crate) fn copies_by_original(
+    cat: &lightcraft_catalog::Catalog,
+) -> std::collections::HashMap<lightcraft_catalog::PhotoId, Vec<lightcraft_catalog::PhotoId>> {
+    let mut copies = std::collections::HashMap::<_, Vec<_>>::new();
+    for p in cat.photos() {
+        if let Some(original) = p.copy_of {
+            copies.entry(original).or_default().push(p.id);
+        }
+    }
+    copies
+}
+
+/// Bring an original and `copies` up to date from a fresh probe. Reload and preview-only recheck share this.
 pub(crate) fn reload_ops(
     cat: &lightcraft_catalog::Catalog,
     id: lightcraft_catalog::PhotoId,
+    copies: &[lightcraft_catalog::PhotoId],
     info: &crate::media::ProbeInfo,
     ops: &mut Vec<Op>,
     changed: &mut Vec<lightcraft_catalog::PhotoId>,
 ) {
     let Some(ph) = cat.photo(id) else { return };
     // camera fields the catalog lacks (e.g. a raw imported before its format was read) are filled in;
-    // nothing already set is overwritten
+    // user fields already set are kept
     let meta_ops = fill_missing_meta(id, ph, info);
     let mut mine: Vec<Op> =
         content_op(id, ph, info.clone()).into_iter().chain(meta_ops).chain(lens_ops(id, ph, info)).chain(as_shot_wb_op(id, ph, info)).collect();
@@ -302,9 +314,13 @@ pub(crate) fn reload_ops(
         changed.push(id);
     }
     // virtual copies share the file
-    for c in cat.photos().filter(|c| c.copy_of == Some(id)) {
-        let theirs: Vec<Op> =
-            content_op(c.id, c, info.clone()).into_iter().chain(lens_ops(c.id, c, info)).chain(as_shot_wb_op(c.id, c, info)).collect();
+    for c in copies.iter().filter_map(|id| cat.photo(*id)) {
+        let theirs: Vec<Op> = content_op(c.id, c, info.clone())
+            .into_iter()
+            .chain(fill_missing_meta(c.id, c, info))
+            .chain(lens_ops(c.id, c, info))
+            .chain(as_shot_wb_op(c.id, c, info))
+            .collect();
         if !theirs.is_empty() {
             ops.extend(theirs);
             changed.push(c.id);
@@ -312,31 +328,91 @@ pub(crate) fn reload_ops(
     }
 }
 
-/// Re-read photos whose files changed on disk (an external editor saved them): new size,
-/// dimensions and content hash, cached sources dropped. → {reloaded: [ids]}
-fn reload(s: &mut Session, p: &Value) -> Result<Value> {
+struct ReloadPhoto {
+    id: lightcraft_catalog::PhotoId,
+    path: String,
+    hash: Option<String>,
+    deleted: bool,
+}
+
+/// A reload's file identities and probe, detached from the session for background work.
+pub struct ReloadInput {
+    photos: Vec<ReloadPhoto>,
+    probe: Option<crate::media::FileProbe>,
+}
+
+/// Probe results, applied on the session thread against the current metadata and source identities.
+pub struct ReloadResults(Vec<(ReloadPhoto, std::result::Result<crate::media::ProbeInfo, String>)>);
+
+impl ReloadInput {
+    pub fn total(&self) -> usize {
+        self.photos.len()
+    }
+
+    /// Use the import worker/memory limits; cancellation is checked between files.
+    pub fn probe(self, task: Option<&crate::activity::TaskGuard>) -> ReloadResults {
+        let paths: Vec<_> = self.photos.iter().map(|p| p.path.clone()).collect();
+        let probed = crate::import::probe_reload(self.probe.as_ref(), &paths, task);
+        ReloadResults(self.photos.into_iter().zip(probed).collect())
+    }
+}
+
+/// Resolve virtual copies once, without any file I/O.
+pub fn prepare_reload(s: &Session, p: &Value) -> Result<ReloadInput> {
     let ids = s.targets(p)?;
-    let paths: Vec<(lightcraft_catalog::PhotoId, String)> = ids
+    let mut seen = std::collections::HashSet::new();
+    let photos = ids
         .iter()
-        .filter_map(|id| match s.catalog.photo(*id).map(|ph| ph.source.clone()) {
-            Some(Source::File { path }) => Some((*id, path)),
-            _ => None,
+        .map(|id| s.catalog.photo(*id).and_then(|ph| ph.copy_of).unwrap_or(*id))
+        .filter(|id| seen.insert(*id))
+        .filter_map(|id| {
+            let ph = s.catalog.photo(id)?;
+            match &ph.source {
+                Source::File { path } => Some(ReloadPhoto { id, path: path.clone(), hash: ph.content_hash.clone(), deleted: ph.deleted }),
+                _ => None,
+            }
         })
         .collect();
-    let probed = crate::import::probe_paths(s, &paths.iter().map(|(_, p)| p.clone()).collect::<Vec<_>>());
+    Ok(ReloadInput { photos, probe: s.media.file_probe.clone() })
+}
+
+/// One undoable reload. Late user edits are preserved, and removed/relinked/replaced photos skipped.
+pub fn apply_reload(s: &mut Session, results: ReloadResults) -> Result<Value> {
+    let copies = copies_by_original(&s.catalog);
     let mut ops = Vec::new();
     let mut reloaded = Vec::new();
-    for ((id, _), info) in paths.into_iter().zip(probed) {
-        let Ok(info) = info else { continue };
-        reload_ops(&s.catalog, id, &info, &mut ops, &mut reloaded);
+    let mut failed = Vec::new();
+    let mut skipped = 0;
+    for (item, info) in results.0 {
+        let (id, path) = (item.id, item.path);
+        if !s.catalog.photo(id).is_some_and(|p| {
+            matches!(&p.source, Source::File { path: current } if current == &path) && p.content_hash == item.hash && p.deleted == item.deleted
+        }) {
+            skipped += 1;
+            continue;
+        }
+        let info = match info {
+            Ok(info) => info,
+            Err(error) => {
+                failed.push(json!({"id": id.0, "path": path, "error": error}));
+                continue;
+            }
+        };
+        reload_ops(&s.catalog, id, copies.get(&id).map(Vec::as_slice).unwrap_or(&[]), &info, &mut ops, &mut reloaded);
     }
     for id in &reloaded {
         s.media.forget(*id);
     }
     if !ops.is_empty() {
         s.commit("Reload Changed Files", Op::Batch { ops })?;
+        s.skip_auto_write = true;
     }
-    Ok(json!({"reloaded": reloaded.iter().map(|i| i.0).collect::<Vec<_>>()}))
+    Ok(json!({"reloaded": reloaded.iter().map(|i| i.0).collect::<Vec<_>>(), "failed": failed, "skipped":skipped}))
+}
+
+/// Synchronous command for CLI clients; desktop batches use the same prepare/probe/apply off-thread.
+fn reload(s: &mut Session, p: &Value) -> Result<Value> {
+    apply_reload(s, prepare_reload(s, p)?.probe(None))
 }
 
 /// Duplicate: copy the file next to itself (`<name>-copy`, never overwriting) and add it with the
@@ -401,7 +477,7 @@ pub fn edit_specs() -> Vec<CommandSpec> {
             "Reload from Disk",
             ["Photo"],
             None,
-            "{ids?} — re-read photos whose files changed on disk (e.g. saved by an external editor), or raws shown from their embedded preview that can be decoded now; camera fields the catalog lacks are filled in, and so is the lens data the file carries (an untouched photo then gets its lens correction turned on as import would; an edited one keeps its settings) → {reloaded}",
+            "{ids?} — refresh source information without writing image files or sidecars; desktop batches run on import workers with cancellation, stale-result guards and one Undo step → {reloaded, failed, skipped}",
             has_selection,
             reload
         ),
