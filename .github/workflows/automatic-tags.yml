@@ -1,0 +1,67 @@
+# Real CPU inference on the same public photo fixtures across supported desktop operating systems.
+name: Automatic tags
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/automatic-tags.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/autotag/**"
+      - "crates/meta/**"
+      - "crates/faces/**"
+      - "crates/catalog/**"
+      - "crates/engine/**"
+      - "crates/ui-egui/**"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: automatic-tags-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  cpu-tags:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      LIGHTCRAFT_GPU: "0"
+      LIGHTCRAFT_TAG_MODELS: ${{ runner.temp }}/lightcraft-tag-models
+      RAYON_NUM_THREADS: "2"
+      CARGO_BUILD_JOBS: "2"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_DEV_INCREMENTAL: "false"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1, as used by this repository
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - name: Verify model downloads
+        run: |
+          cargo build --locked -p lightcraft-autotag --example tagging-bench
+          bench=target/debug/examples/tagging-bench
+          if [[ "$RUNNER_OS" == Windows ]]; then bench="$bench.exe"; fi
+          tagging_python=$(command -v python3 || command -v python)
+          "$tagging_python" crates/autotag/tools/download-models.py "$bench"
+      - name: Real inference, search, persistence and model installation
+        run: |
+          cargo test --locked -p lightcraft-autotag -- --nocapture --test-threads=1
+          cargo test --locked -p lightcraft-catalog --test autotags
+          cargo test --locked -p lightcraft-meta
+          cargo test --locked -p lightcraft-engine tests_comfy -- --test-threads=1
+          cargo test --locked -p lightcraft-engine xmp -- --test-threads=1
+          cargo test --locked -p lightcraft-engine sidecar -- --test-threads=1
+          cargo test --locked -p lightcraft-engine cmd::autotags::tests -- --nocapture --test-threads=1
+          cargo test --locked -p lightcraft-engine real_detector_download_is_verified_and_installed -- --ignored --nocapture
+          cargo test --locked -p lightcraft-ui-egui tests_autotags -- --nocapture --test-threads=1
+          cargo test --locked -p lightcraft-ui-egui tests_reload -- --test-threads=1
+          cargo test --locked -p lightcraft-ui-egui tests_activity -- --test-threads=1
+      - name: CPU smoke timings
+        run: |
+          bench=target/debug/examples/tagging-bench
+          if [[ "$RUNNER_OS" == Windows ]]; then bench="$bench.exe"; fi
+          for model in tinyclip-8m tinyclip-39m yolox-nano yolox-s; do "$bench" "$model"; done

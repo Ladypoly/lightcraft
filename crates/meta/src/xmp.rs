@@ -580,6 +580,13 @@ pub fn write_xmp(meta: &Metadata, lc_settings: Option<&str>) -> String {
 
 /// Like [`write_xmp`], with any number of simple `lc:<name>` properties (e.g. `settings`, `flag`).
 pub fn write_xmp_lc(meta: &Metadata, lc: &[(&str, &str)]) -> String {
+    let values: Vec<_> = lc.iter().map(|(k, v)| (*k, XmpValue::Text((*v).into()))).collect();
+    write_xmp_lc_values(meta, &values)
+}
+
+/// Write LightCraft properties, including RDF arrays and structs. Names are local `lc` names;
+/// struct keys are namespace-qualified. Text is always escaped, never interpreted as XML.
+pub fn write_xmp_lc_values(meta: &Metadata, lc: &[(&str, XmpValue)]) -> String {
     let mut simple: Vec<(&str, String)> = Vec::new();
     let mut push = |k: &'static str, v: Option<String>| {
         if let Some(v) = v {
@@ -637,8 +644,7 @@ pub fn write_xmp_lc(meta: &Metadata, lc: &[(&str, &str)]) -> String {
     }
     for (k, v) in lc {
         if !k.is_empty() && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
-            // element content: quotes needn't be escaped, which keeps the JSON readable
-            x.push_str(&format!("   <lc:{k}>{}</lc:{k}>\n", partial_escape(xml_safe(v))));
+            write_value(&mut x, &format!("lc:{k}"), v, 0);
         }
     }
     let array = |x: &mut String, k: &str, kind: &str, items: &[String], lang: bool| {
@@ -685,12 +691,39 @@ pub fn write_xmp_lc(meta: &Metadata, lc: &[(&str, &str)]) -> String {
     x
 }
 
+fn write_value(x: &mut String, name: &str, value: &XmpValue, depth: usize) {
+    let valid_name = name.split_once(':').is_some_and(|(prefix, local)| {
+        NAMESPACES.iter().any(|(p, _)| *p == prefix) && !local.is_empty() && local.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+    });
+    if depth >= 32 || !valid_name {
+        return;
+    }
+    match value {
+        XmpValue::Text(text) => x.push_str(&format!("<{name}>{}</{name}>\n", partial_escape(xml_safe(text)))),
+        XmpValue::Array(items) => {
+            x.push_str(&format!("<{name}><rdf:Bag>\n"));
+            for item in items {
+                write_value(x, "rdf:li", item, depth + 1);
+            }
+            x.push_str(&format!("</rdf:Bag></{name}>\n"));
+        }
+        XmpValue::Struct(fields) => {
+            x.push_str(&format!("<{name} rdf:parseType=\"Resource\">\n"));
+            for (key, value) in fields {
+                write_value(x, key, value, depth + 1);
+            }
+            x.push_str(&format!("</{name}>\n"));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn full() -> Metadata {
         Metadata {
+            comfy: None,
             // write_xmp doesn't emit regions yet (read-only interchange; see docs/xmp-interop.md), so the
             // roundtrip fixture must leave this empty or `roundtrip_all_fields` can't round-trip it.
             regions: Vec::new(),

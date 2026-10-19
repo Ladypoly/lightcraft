@@ -483,13 +483,24 @@ pub fn launch_path(arg: &str, cwd: Option<&Path>, home: Option<&Path>, dcim: imp
 /// Probe files (headers + content hash) as an import would.
 pub(crate) fn probe_paths(s: &Session, paths: &[String]) -> Vec<Result<ProbeInfo, String>> {
     let progress = ScanProgress::default();
-    probe_all(s.media.file_probe.as_ref(), paths, &progress.done, &progress.cancel)
+    probe_all(s.media.file_probe.as_ref(), paths, &progress.done, &progress.cancel, None)
 }
 
 /// Probe files with `probe` (a clone of the session's file probe), off the session: on a worker thread.
 pub(crate) fn probe_with(probe: &crate::media::FileProbe, paths: &[String]) -> Vec<Result<ProbeInfo, String>> {
     let progress = ScanProgress::default();
-    probe_all(Some(probe), paths, &progress.done, &progress.cancel)
+    probe_all(Some(probe), paths, &progress.done, &progress.cancel, None)
+}
+
+pub(crate) fn probe_reload(
+    probe: Option<&crate::media::FileProbe>,
+    paths: &[String],
+    task: Option<&crate::activity::TaskGuard>,
+) -> Vec<Result<ProbeInfo, String>> {
+    let progress = ScanProgress::default();
+    let handle = task.map(crate::activity::TaskGuard::handle);
+    let cancel = task.and_then(crate::activity::TaskGuard::cancel_flag);
+    probe_all(probe, paths, &progress.done, cancel.as_deref().unwrap_or(&progress.cancel), handle.as_ref())
 }
 
 /// Probe `paths` (several at once), counting each in `done`. Stops before the next file once
@@ -499,6 +510,7 @@ fn probe_all(
     paths: &[String],
     done: &std::sync::atomic::AtomicUsize,
     cancel: &std::sync::atomic::AtomicBool,
+    task: Option<&crate::activity::TaskHandle>,
 ) -> Vec<Result<ProbeInfo, String>> {
     use std::sync::atomic::Ordering::Relaxed;
     let Some(probe) = probe.cloned() else {
@@ -531,7 +543,10 @@ fn probe_all(
                                 break;
                             }
                             let r = probe(&paths[i]);
-                            done.fetch_add(1, Relaxed);
+                            let n = done.fetch_add(1, Relaxed) + 1;
+                            if let Some(task) = task {
+                                task.progress(n as u64, paths.len() as u64);
+                            }
                             out.lock().unwrap_or_else(|e| e.into_inner())[i] = Some(r);
                         }
                     });
@@ -547,7 +562,10 @@ fn probe_all(
                 return Err("cancelled".into());
             }
             let r = probe(p);
-            done.fetch_add(1, Relaxed);
+            let n = done.fetch_add(1, Relaxed) + 1;
+            if let Some(task) = task {
+                task.progress(n as u64, paths.len() as u64);
+            }
             r
         })
         .collect()
@@ -697,7 +715,7 @@ pub(crate) fn scan_files(mut input: ScanInput, files: Vec<String>, progress: &Sc
         .collect();
     let missing: Vec<String> = todo.iter().zip(&cached).filter(|(_, c)| c.is_none()).map(|(f, _)| f.clone()).collect();
     progress.done.store(todo.len() - missing.len(), Relaxed);
-    let mut fresh = probe_all(input.probe.as_ref(), &missing, &progress.done, &progress.cancel).into_iter();
+    let mut fresh = probe_all(input.probe.as_ref(), &missing, &progress.done, &progress.cancel, None).into_iter();
     let probed: Vec<Result<ProbeInfo, String>> =
         cached.into_iter().map(|c| c.map(Ok).unwrap_or_else(|| fresh.next().unwrap_or_else(|| Err("not probed".into())))).collect();
     crate::memory::release();
@@ -1021,7 +1039,7 @@ impl ImportJob {
         // Reading the files is the slow part of adding them where they are: it is counted on its
         // own, and `cancel` stops it too (a large library takes long enough to want both).
         self.read_total.fetch_add(missing.len(), Relaxed);
-        let mut fresh = probe_all(self.probe.as_ref(), &missing, &self.read_done, cancel).into_iter();
+        let mut fresh = probe_all(self.probe.as_ref(), &missing, &self.read_done, cancel, None).into_iter();
         let probed: Vec<Result<ProbeInfo, String>> =
             cached.into_iter().map(|c| c.map(Ok).unwrap_or_else(|| fresh.next().unwrap_or_else(|| Err("not probed".into())))).collect();
         crate::memory::release();

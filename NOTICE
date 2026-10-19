@@ -62,3 +62,13 @@ downloads cities15000.zip, admin1CodesASCII.txt and countryInfo.txt from GeoName
 (https://download.geonames.org/export/dump/) into the settings folder. GeoNames data is licensed
 under Creative Commons Attribution 4.0 (https://creativecommons.org/licenses/by/4.0/);
 attribution: "GeoNames, geonames.org". The lookup code (crates/geocode) is our own.
+
+Automatic keyword models are not bundled. On explicit request, LightCraft downloads pinned,
+SHA-256-checked TinyCLIP weights by Microsoft Research (https://github.com/microsoft/Cream/tree/main/TinyCLIP),
+MIT License, Copyright (c) Microsoft Corporation; see assets/licenses/TinyCLIP-MIT.txt.
+Inference uses Candle in Rust. The fixed vocabulary and procedural regression image are original;
+CLIP token IDs were checked with the models' shared OpenAI CLIP tokenizer.
+
+Optional YOLOX object detection models: Copyright (c) Megvii, Inc. and its affiliates.
+Official pretrained weights are downloaded separately under Apache-2.0.
+See assets/licenses/YOLOX-Apache-2.0.txt and assets/ATTRIBUTION.md.

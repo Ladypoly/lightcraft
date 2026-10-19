@@ -5,10 +5,11 @@
 //! `edit.*` (undo/redo), and queries (`catalog.query`, `photo.inspect`, `develop.get`…).
 
 mod activity;
+mod autotags;
 mod before;
 pub(crate) mod browse;
 mod color;
-pub(crate) mod convert;
+pub mod convert;
 mod cull;
 pub mod curves;
 pub(crate) mod denoise;
@@ -177,6 +178,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(face_recognize::specs());
         v.extend(focus::specs());
         v.extend(activity::specs());
+        v.extend(autotags::specs());
         v
     })
 }

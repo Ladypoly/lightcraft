@@ -1152,11 +1152,7 @@ impl QuickJob {
 
 /// What identifies a photo's pixels for caching: its content hash, else its source.
 pub fn content_key(p: &Photo) -> String {
-    match (&p.content_hash, &p.source) {
-        (Some(h), _) => h.clone(),
-        (None, Source::Demo { scene }) => format!("demo:{scene}"),
-        (None, Source::File { path }) => format!("file:{path}:{}", p.file_size),
-    }
+    p.content_key()
 }
 
 pub fn source_info(p: &Photo) -> SourceInfo {

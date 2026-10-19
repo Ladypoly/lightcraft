@@ -77,7 +77,7 @@ fn chip_size(ui: &egui::Ui, name: &str, partial: bool, cross: bool, row_w: f32) 
 /// whole to the next line: `name` (the path, or what the grouped box shows of it; cut short to fit
 /// a row `row_w` wide) and, with `cross`, a × at its end. A `partial` one (only some of the
 /// selected photos) is dimmed and marked with an asterisk. Returns the name's response and the ×'s.
-fn chip(ui: &mut egui::Ui, path: &str, name: &str, partial: bool, cross: bool, row_w: f32) -> (egui::Response, Option<egui::Response>) {
+pub(super) fn chip(ui: &mut egui::Ui, path: &str, name: &str, partial: bool, cross: bool, row_w: f32) -> (egui::Response, Option<egui::Response>) {
     use egui::{Align2, CornerRadius, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
     let t = Tokens::get(ui.ctx());
     let font = t.font(13.0);

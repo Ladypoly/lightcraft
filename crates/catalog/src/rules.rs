@@ -827,7 +827,7 @@ impl Rule {
                 let t = if p.develop.treatment == lightcraft_develop::Treatment::Bw { "monochrome" } else { "color" };
                 (t == want) == (op == "is")
             }
-            "keywords" => names_op(op, &m.keywords, &want),
+            "keywords" => names_op(op, &cat.keyword_search_names(p), &want),
             "keywordCount" => num_op(op, Some(p.keyword_count() as f64), value),
             "person" => names_op(op, &p.people(), &want),
             "personCount" => num_op(op, Some(p.people().len() as f64), value),
@@ -844,7 +844,7 @@ impl Rule {
                     &m.country,
                     &m.alt_text,
                     &p.format,
-                    &m.keywords.join(" "),
+                    &cat.keyword_search_names(p).join(" "),
                     &p.people().join(" "),
                     p.copy_name.as_deref().unwrap_or(""),
                 ]

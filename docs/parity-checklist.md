@@ -1,6 +1,6 @@
 # Lightroom parity checklist
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-15 · **Change:** minor (LRC-PRINT-PAGE: Print Page Options) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-19 · **Change:** minor (current-view tagging; saved catalog metadata viewer) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 The measured, row-by-row checklist: one row per Lightroom feature, menu item and shortcut, what we
 have and what is missing. It answers *does the feature exist?* (feature breadth). Whether it is good
@@ -148,13 +148,14 @@ differences and missing bindings are in [ui-parity.md](ui-parity.md#shortcuts).
 
 | Id | Feature | Tier | Status | Evidence | Missing / notes |
 |---|---|---|---|---|---|
-| LR-FILT-SEARCH-META | Text search | P0 | ✅ | `cmd:library.filter` (`text`), `crates/ui-egui/src/panels/topbar.rs`, `crates/catalog/src/query.rs` | fielded tokens (`rating:3`, `iso:>800`, `camera:…`); no suggestions dropdown |
+| LR-FILT-SEARCH-META | Text search | P0 | ✅ | `cmd:library.filter` (`text`), `cmd:photo.reload`, `crates/ui-egui/src/panels/topbar.rs`, `crates/catalog/src/query.rs`, `crates/meta/src/comfy.rs` | fielded tokens (`rating:3`, `iso:>800`, `camera:…`), quoted phrases and ComfyUI PNG metadata (`comfy:true`, `prompt:`, `model:`, `lora:`, `sampler:`, exact `seed:`, numeric `steps:` / `cfg:`); indexed at import, existing images reindexed with Reload from Disk; no suggestions dropdown |
 | LR-FILT-SEARCH-AI | Natural-language search | P2 | ⬜ | | |
 | LR-FILT-RATING | Rating filter | P0 | ✅ | `cmd:library.filter` (`rating`, `ratingOp`), `crates/ui-egui/src/panels/filterbar.rs` | ≥ / = / ≤ stars in the filter bar (`cmd:view.filterBar`) |
 | LR-FILT-FLAG | Flag filter | P0 | ✅ | `cmd:library.filter` (`flag`), `crates/ui-egui/src/panels/filterbar.rs` | picked / rejected / unflagged (one at a time) |
 | LR-FILT-LABEL | Colour-label filter | P1 | ✅ | `cmd:library.filter` (`label`), `crates/ui-egui/src/panels/filterbar.rs` | one label at a time; no “no label” choice |
 | LR-FILT-TYPE | Type / edited filter | P1 | ✅ | `cmd:library.filter` (`kind`, `merged`, `edited`), `crates/ui-egui/src/panels/filterbar.rs`, `crates/catalog/src/query.rs` (`merged_kind`) | photos / raw / videos / HDR / panoramas / HDR panoramas (merge results by name), edited / unedited; no depth kind |
 | LR-FILT-KEYWORD | Keyword filter | P1 | ✅ | `cmd:library.filter` (`keyword`), `crates/ui-egui/src/panels/filterbar.rs` | keyword picker |
+| LC-FILT-AUTO-KEYWORDS | Local automatic keywords | P1 | 🟡 | `cmd:tags.models`, `cmd:tags.download`, `cmd:tags.configure`, `cmd:tags.pump`, `cmd:tags.review`, `cmd:tags.scan`, `cmd:tags.reindex`, `crates/autotag`, `crates/ui-egui/src/panels/autotags.rs`, `docs/automatic-keywords.md` | Settings → Auto Tagging manages the automatic switch and models; current-view coverage, direct Tag missing/Rescan and right-sidebar-only progress/cancellation; separate lc:aiTags RDF sidecar save/read with source guards and foreign-metadata preservation; opt-in CPU TinyCLIP Compact/Balanced scoped to the current view (including Local, filters and subfolders), independent multi-label selection with subject/scene budgets and full-frame evidence, combined AI-metadata search/smart albums with manual-only keyword lists/counts, AI provenance and undoable accept/dismiss, source/model invalidation and restart; optional pinned YOLOX Nano/Small object detection with CLIP context and per-tag provenance; English fixed vocabularies, Windows/Linux CPU runtime checked; macOS core compile checked, runtime pending; no free-form semantic search or object localization |
 | LR-FILT-CAMERA | Camera / lens filter | P1 | ✅ | `cmd:library.filter` (`camera`, `lens`), `crates/ui-egui/src/panels/filterbar.rs` | camera and lens pickers |
 | LR-FILT-LOCATION | Location filter | P2 | ✅ | `cmd:library.filter` (`text`, `ruleSet` field `location`) | free text, or a rule on location / city / state / country (smart albums, `library.filter`) |
 | LR-FILT-PEOPLE | People filter | P2 | 🟡 | `cmd:library.filter`, `crates/catalog/src/query.rs` | filter by a person's name (case-insensitive, named Face regions only) from the People view, a filter chip or `person:`; no unnamed / suggested people |
@@ -171,7 +172,7 @@ differences and missing bindings are in [ui-parity.md](ui-parity.md#shortcuts).
 | LR-META-LOCATION | Location editing | P2 | 🟡 | `cmd:photo.setMeta` (`location`, `city`, `state`, `country`, `gps`), `cmd:metadata.reverseGeocode` | place fields and GPS (decimal or degrees / minutes / seconds) edited in Info, read/written as IPTC Core / Photoshop / EXIF XMP; Show on Map opens OpenStreetMap; Fill Location fills empty City / State / Country from GPS offline (GeoNames, downloaded on request: `cmd:metadata.downloadPlaceNames`); no embedded map |
 | LR-META-COPYPASTE | Copy / paste metadata | P2 | ✅ | `cmd:photo.copyMetadata`, `cmd:photo.pasteMetadata` | title, caption, alt text, extended description, copyright (notice, status, usage terms, info URL), creator, place fields, keywords; `fields` picks a subset |
 | LR-META-XMP | XMP read/write | P0 | ✅ | `cmd:photo.saveMetadataToFile`, `cmd:photo.readMetadataFromFile`, `cmd:library.xmpPreferences`, `crates/engine/src/sidecar.rs`, `docs/xmp-interop.md` | sidecar wins for metadata; a sidecar capture time (`exif:DateTimeOriginal` / `photoshop:DateCreated` / `xmp:CreateDate`) fills in only when the file has none; saving merges into an existing sidecar (`crates/meta/src/xmp_merge.rs`): another app's `crs:`, `xmpMM:History` and unknown namespaces are kept byte for byte, an unreadable sidecar is backed up first; with stem naming, files sharing a stem (raw + JPEG) get separate sidecars (`<file>.xmp` for all but the raw); a `crs:` custom white balance on a relative-WB raw is shifted from `crs:AsShotTemperature` rather than read as Kelvin, or kept As Shot and reported when the packet has no as-shot white (issue #510); heal and clone spots (`crs:RetouchAreas`, legacy `crs:RetouchInfo`) are read into our spots (`crates/engine/src/crs_masks.rs`, see `docs/xmp-interop.md` → Spot removal); radial masks (`Mask/CircularGradient`) keep Lightroom's inside / outside: `crs:Flipped="true"` is the effect-inside flag of current masks and of the legacy Radial Filter, `crs:MaskInverted` the inversion, checked against Lightroom Classic's renders (issue #1815); Read Metadata from File never writes the sidecar back, even with auto-write on, so another app's later `crs:` edits are still read (issue #934) |
-| LR-META-EXIF-FULL | Full EXIF/IPTC [Classic] | P1 | ✅ | `cmd:photo.allMetadata`, `cmd:dialog.allMetadata`, `crates/meta/src/tags.rs`, `crates/meta/src/exif.rs`, `crates/meta/src/iptc.rs` | read and written on export; Info ▸ All Metadata…: every TIFF / EXIF / GPS / interop tag (named, common values spelled out) and the XMP fields, searchable; metadata presets |
+| LR-META-EXIF-FULL | Full EXIF/IPTC [Classic] | P1 | ✅ | `cmd:photo.allMetadata`, `cmd:dialog.allMetadata`, `crates/meta/src/tags.rs`, `crates/meta/src/exif.rs`, `crates/meta/src/iptc.rs` | read and written on export; Info ▸ All Metadata…: every TIFF / EXIF / GPS / interop tag (named, common values spelled out) and the XMP fields, searchable; PNG text (including compressed generator metadata), readable original-case ComfyUI summary and Copy displayed metadata; metadata presets |
 
 ## F. Edit panel — global adjustments (EDIT)
 
@@ -795,8 +796,11 @@ Latin stays upright. Advanced Japanese composition remains open. Regression cove
 
 ## Revision history
 
+ComfyUI search extends an already completed row; statuses and feature counts are unchanged.
+
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-19 | minor | Automatic keywords include Local folders, filters and subfolders; saved catalog values appear in All Metadata. Status/counts unchanged. |
 | 2026-10-14 | patch | LR-EXP-TYPE: opaque 8-bit PNG/TIFF/WebP use RGB; transparent exports retain alpha (#1670). Statuses and feature counts unchanged. |
 | 2026-10-15 | minor | LRC-PRINT-PAGE: Page Options (Page Numbers, Page Info, Crop Marks) on Single Image and Contact Sheet pages, in the Print dialog, `print.set` and templates; still 🟡 (no identity plate, watermark, photo info or Cut Guides) |
 | 2026-10-15 | minor | LR-IMP-FORMATS: Hasselblad 3FR and FFF show their uncompressed RGB preview (no JPEG in these files) in the grid and loupe until developed, and as the stand-in when a file fails to decode; status unchanged (🟡) |
@@ -891,3 +895,4 @@ Latin stays upright. Advanced Japanese composition remains open. Regression cove
 | 2026-10-13 | minor | LRC-LIB-CATALOG-IMPORT review: offline Local promotion and result dismissal across library switches covered; redundant operation/settings copies removed. Status and summary counts unchanged. |
 | 2026-10-14 | patch | LRC-LIB-CATALOG-IMPORT: reconciled with upstream phased progress, cancellation kinds, WAL-only import, translations and current progress tracking. Status and summary counts unchanged. |
 | 2026-10-13 | minor | KEYC-COMPARE: `=` / `-` (also `+`) increase / decrease the grid thumbnail size (`view.thumbSizeUp` / `view.thumbSizeDown`, View menu), grids only; status unchanged (🟡) |
+| 2026-10-19 | minor | Separate AI annotations round-trip through XMP sidecars without keyword promotion; tagging progress/cancellation appears only in the right sidebar. Status/counts unchanged. |

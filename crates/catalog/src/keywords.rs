@@ -234,7 +234,25 @@ pub struct KeywordNode {
 }
 
 impl Catalog {
-    /// The keyword tree: every keyword level with photo counts, sorted by name (case-insensitive).
+    /// Actual keywords and the synonyms of their listed hierarchy, shared by search and smart albums.
+    pub fn keyword_search_names<'a>(&'a self, photo: &'a crate::Photo) -> Vec<&'a str> {
+        let mut names = Vec::new();
+        for keyword in photo.searchable_keywords() {
+            names.push(keyword);
+            for end in keyword.match_indices(SEP).map(|(i, _)| i).chain(std::iter::once(keyword.len())) {
+                if let Some(info) = keyword.get(..end).and_then(|p| self.keyword_info(p)) {
+                    names.extend(info.synonyms.iter().map(String::as_str));
+                }
+            }
+        }
+        names
+    }
+
+    pub fn keyword_matches(&self, photo: &crate::Photo, keyword: &str) -> bool {
+        self.keyword_search_names(photo).iter().any(|name| is_under(name, keyword))
+    }
+
+    /// Manual/accepted keyword levels and assignment counts, sorted by name; AI suggestions stay in metadata.
     pub fn keyword_tree(&self) -> Vec<KeywordNode> {
         use std::collections::HashMap;
         // every keyword level (`travel`, `travel|italy`…), one per lower-case path: the name and
@@ -257,10 +275,10 @@ impl Catalog {
         // each keyword as written → its levels (its own and those above it), worked out once: a
         // large library repeats a few thousand keywords tens of thousands of times (issue #1011)
         let mut chains: HashMap<&str, Vec<usize>> = HashMap::new();
-        let photos = self.photos().filter(|p| p.in_library()).map(|p| (true, p.meta.keywords.as_slice()));
-        for (photo, (counts, keywords)) in std::iter::once((false, listed.as_slice())).chain(photos).enumerate() {
+        let photos = self.photos().filter(|p| p.in_library()).map(|p| (true, p.meta.keywords.iter().map(String::as_str).collect::<Vec<_>>()));
+        for (photo, (counts, keywords)) in std::iter::once((false, listed.iter().map(String::as_str).collect::<Vec<_>>())).chain(photos).enumerate() {
             for k in keywords {
-                let chain = chains.entry(k.as_str()).or_insert_with(|| {
+                let chain = chains.entry(k).or_insert_with(|| {
                     let mut chain: Vec<usize> = Vec::new();
                     let mut path = String::new();
                     let mut lower = String::new();
@@ -322,7 +340,31 @@ impl Catalog {
             .filter_map(|p| {
                 let mut kws = f(&p.meta.keywords);
                 dedupe(&mut kws);
-                (kws != p.meta.keywords).then(|| Op::SetMeta { id: p.id, meta: Box::new(Meta { keywords: kws, ..p.meta.clone() }) })
+                let mut meta = Meta { keywords: kws, ..p.meta.clone() };
+                if let Some(ai) = &mut meta.auto_tags {
+                    let mut tags = Vec::new();
+                    for tag in &ai.tags {
+                        // Ordinary keyword edits only follow tags explicitly accepted as keywords.
+                        if !tag.accepted {
+                            tags.push(tag.clone());
+                            continue;
+                        }
+                        let names = f(std::slice::from_ref(&tag.name));
+                        if names != [tag.name.clone()] && !ai.dismissed.iter().any(|n| same(n, &tag.name)) {
+                            ai.dismissed.push(tag.name.clone());
+                        }
+                        for name in names {
+                            // Renaming a suggestion is a human decision: keep it through model changes.
+                            let accepted = tag.accepted || name != tag.name;
+                            if accepted && !meta.keywords.iter().any(|k| same(k, &name)) {
+                                meta.keywords.push(name.clone());
+                            }
+                            tags.push(crate::autotags::AutoTag { name, accepted, ..tag.clone() });
+                        }
+                    }
+                    ai.tags = tags;
+                }
+                (meta != p.meta).then(|| Op::SetMeta { id: p.id, meta: Box::new(meta) })
             })
             .collect()
     }
@@ -647,9 +689,9 @@ impl Catalog {
         }
         // the levels of a listed keyword below it, or of a photo's
         let levels = k.split(SEP).count();
-        let listed = self.keyword_list.values().map(|l| &l.path);
+        let listed = self.keyword_list.values().map(|l| l.path.as_str());
         listed
-            .chain(self.photos().filter(|p| p.in_library()).flat_map(|p| p.meta.keywords.iter()))
+            .chain(self.photos().filter(|p| p.in_library()).flat_map(|p| p.meta.keywords.iter().map(String::as_str)))
             .find(|x| is_under(x, &k))
             .map(|x| x.split(SEP).map(str::trim).filter(|s| !s.is_empty()).take(levels).collect::<Vec<_>>().join("|"))
     }
@@ -738,7 +780,7 @@ impl Catalog {
     /// Take off the keyword list the keywords no library photo has, nor any keyword below them — one
     /// batch.
     pub fn purge_unused_keywords_ops(&self) -> Op {
-        let used: Vec<&String> = self.photos().filter(|p| p.in_library()).flat_map(|p| p.meta.keywords.iter()).collect();
+        let used: Vec<&str> = self.photos().filter(|p| p.in_library()).flat_map(|p| p.meta.keywords.iter().map(String::as_str)).collect();
         Op::Batch { ops: self.list_ops(|list| list.retain(|_, l| used.iter().any(|k| is_under(k, &l.path)))) }
     }
 

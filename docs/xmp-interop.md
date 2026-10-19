@@ -27,8 +27,35 @@ What we write (standard namespaces, so other tools can read the metadata):
 | Pick / reject flag | `lc:flag` (`pick`, `reject`, `none`) |
 | Location | `lc:location` |
 | Develop settings | `lc:settings` — our complete `DevelopSettings` as JSON (exact round trip, incl. masks, spots, crop and the rendering process; settings without `process` are V1, see [process-versions.md](process-versions.md)) |
+| AI annotations | `lc:aiTags` — structured, separate from ordinary keywords (see below) |
 
 `lc:` is `http://ns.lightcraft.app/lc/1.0/`.
+
+### AI tags
+
+`lc:aiTags` is an RDF struct (`rdf:parseType="Resource"`) in the existing LightCraft namespace.
+It is written by Save Metadata to File and original-file exports, read on import/Read Metadata,
+and merged with the same atomic-write and foreign-property preservation rules as other metadata.
+It does not add predictions to `dc:subject` or `lr:hierarchicalSubject`.
+
+| Struct field | Value |
+|---|---|
+| `lc:version` | `1`; unknown versions ignored |
+| `lc:sourceHash` | Original file fingerprint, 32 hexadecimal digits: LightCraft’s fixed-key SipHash-1-3 128-bit file hash; identity check, not an authenticity/security signature |
+| `lc:index` | Combined model hashes, thresholds and index version; completed scans resume without inference when these still match |
+| `lc:tags` | `rdf:Bag` of structs with `lc:name` (text), `lc:score` (finite decimal, −1…1), `lc:model` (model identifier/digest), `lc:accepted` (`True`/`False`) |
+| `lc:dismissed` | `rdf:Bag` of explicitly rejected names; these remain excluded from search |
+
+Tags and dismissals are limited to 512 each, names and per-tag model identifiers to 512 UTF-8 bytes,
+and index identity to 2048 bytes. Invalid annotation structs are ignored without blocking other metadata.
+Only current annotations with a matching file fingerprint are saved/restored. Accepted provenance does
+not create a manual keyword by itself: it follows the ordinary keyword fields. Alternative namespace
+prefixes are accepted. XML text is escaped, and empty bags preserve scans with no predictions.
+
+Other software can map these RDF fields, but there is no claim of automatic support by other photo
+managers. Apps reading only standard keyword fields cannot discover these as keywords without explicit
+mapping. Generated annotations are distinct from IPTC’s AI **image-generation** provenance properties.
+Rendered exports currently omit AI annotations; sidecars preserve the original images unchanged.
 
 Reading merges into the catalog with the **sidecar winning** for every field it states; fields it doesn't state are
 kept. The one exception is the **capture time**: a time embedded in the file (EXIF/IPTC) always wins; when the file

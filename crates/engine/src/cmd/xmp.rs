@@ -86,7 +86,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Save Metadata to File",
             ["Photo"],
             Some("Cmd+S"),
-            "{ids?} — writes each photo's XMP sidecar (metadata + develop settings) next to the original, merged into an existing one (other apps' data kept; an unreadable one is backed up first) → {written: [path], merged: [path], backups: [{path, backup}], failed}",
+            "{ids?} — writes each photo's XMP sidecar (metadata, separate AI annotations + develop settings) next to the original, merged into an existing one (other apps' data kept; an unreadable one is backed up first) → {written: [path], merged: [path], backups: [{path, backup}], failed}",
             has_selection,
             save
         ),

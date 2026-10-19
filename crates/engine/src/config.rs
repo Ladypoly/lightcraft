@@ -108,6 +108,14 @@ fn ensure_writable(dir: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Where opt-in automatic keyword models are kept.
+pub fn default_tag_models_dir() -> Option<PathBuf> {
+    if cfg!(target_arch = "wasm32") {
+        return None;
+    }
+    std::env::var_os("LIGHTCRAFT_TAG_MODELS").filter(|v| !v.is_empty()).map(PathBuf::from).or_else(|| config_dir().map(|d| d.join("tag-models")))
+}
+
 /// Where face models are kept: `$LIGHTCRAFT_FACE_MODELS` if set, else `<config>/models`.
 pub fn default_face_models_dir() -> Option<PathBuf> {
     std::env::var_os("LIGHTCRAFT_FACE_MODELS").filter(|v| !v.is_empty()).map(PathBuf::from).or_else(|| config_dir().map(|d| d.join("models")))

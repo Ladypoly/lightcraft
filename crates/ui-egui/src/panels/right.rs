@@ -27,6 +27,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                             ui.label(egui::RichText::new(crate::i18n::tr("Select photos to give them keywords.")).color(t.text_dim));
                         });
                     }
+                    super::autotags::section(app, ui);
                     super::keyword_list::show(app, ui);
                 });
                 return;
@@ -134,7 +135,7 @@ pub fn label_row(ui: &mut egui::Ui, label: &str, value: &str) {
     ui.painter().text(pos2(r.left() + 110.0, r.center().y), Align2::LEFT_CENTER, value, t.font(12.5), t.text_label);
 }
 
-fn padded(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
+pub(super) fn padded(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
     egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 6, bottom: 6 }).show(ui, add);
 }
 
@@ -811,7 +812,7 @@ fn info(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
         }
         ui.add_space(10.0);
         if text_button(ui, "allMetadata", crate::i18n::tr("All Metadata…"), false)
-            .on_hover_text(crate::i18n::tr("Every EXIF, GPS and XMP field in the file"))
+            .on_hover_text(crate::i18n::tr("EXIF, GPS, XMP and embedded PNG generator metadata"))
             .clicked()
         {
             let _ = app.run("dialog.allMetadata", json!({}));
@@ -938,6 +939,7 @@ fn keywords(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
     if fold_header(app, ui, "keywording", "Keywords") {
         keywording(app, ui);
     }
+    super::autotags::section(app, ui);
     hold_list_in_place(ui, top);
     super::keyword_list::show(app, ui);
 }

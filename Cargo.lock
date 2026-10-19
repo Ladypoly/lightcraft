@@ -3102,6 +3102,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightcraft-autotag"
+version = "0.9.1"
+dependencies = [
+ "candle-core",
+ "candle-nn",
+ "image",
+ "lightcraft-faces",
+ "lightcraft-testkit",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "lightcraft-catalog"
 version = "0.9.1"
 dependencies = [
@@ -3227,6 +3241,7 @@ dependencies = [
  "harfrust",
  "jxl-oxide",
  "libc",
+ "lightcraft-autotag",
  "lightcraft-catalog",
  "lightcraft-codecs",
  "lightcraft-color",
@@ -3253,6 +3268,7 @@ dependencies = [
  "lightcraft-tiff",
  "log",
  "miniz_oxide 0.8.9",
+ "png",
  "rayon",
  "serde",
  "serde_json",
@@ -3378,8 +3394,10 @@ dependencies = [
 name = "lightcraft-meta"
 version = "0.9.1"
 dependencies = [
+ "crc32fast",
  "lightcraft-geom",
  "lightcraft-tiff",
+ "miniz_oxide 0.8.9",
  "proptest",
  "quick-xml 0.38.4",
  "serde",

@@ -167,6 +167,12 @@ pub fn parse_shutter_seconds(s: &str) -> Option<f64> {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Meta {
+    /// AI suggestions and review history, separate from ordinary keywords; XMP sidecars use lc:aiTags.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_tags: Option<crate::autotags::AutoTags>,
+    /// Read-only search index extracted from ComfyUI PNG text chunks, never written to XMP.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comfy: Option<lightcraft_meta::ComfyMetadata>,
     pub camera: String,
     pub lens: String,
     pub focal_mm: Option<f32>,

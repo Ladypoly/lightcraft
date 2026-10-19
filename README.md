@@ -213,6 +213,15 @@ A library that stays out of your way: **All Photos**, **Recently Added**, **Pick
 import date, edit date, name, rating, size or at random (a stable shuffle; View → Sort → Reshuffle for a new one). The justified **Photo Grid** and **Square Grid** views are virtualized,
 so they stay smooth whether you have forty photos or forty thousand.
 
+[ComfyUI PNG metadata](docs/comfyui-search.md) is indexed on import and searched in the same box:
+`comfy:true prompt:"neon city" model:flux lora:detail sampler:euler steps:>20 cfg:>5`.
+For existing imports, select the images and choose **Photo → Reload from Disk** to index them.
+
+[Automatic keywords](docs/automatic-keywords.md) tag visual content locally with a choice of TinyCLIP
+models. Open **Settings → Auto Tagging** to choose/download models and opt in. AI suggestions are
+searchable immediately; accept or dismiss them individually or for the selection. Tagging follows the current view, including Local folders, filters and subfolders.
+**Photo → All Metadata…** also shows embedded PNG text from image generators and saved catalog values.
+
 The **People** view groups named faces, including names read from XMP; face boxes can be edited in the loupe.
 On desktop, automatic detection and recognition use optional models installed through **Settings → Faces**; no weights are
 bundled. See [face models and setup](docs/faces.md).

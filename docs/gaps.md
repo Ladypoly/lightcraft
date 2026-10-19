@@ -1,6 +1,6 @@
 # Gaps: where LightCraft falls short of Lightroom
 
-> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-15 · **Change:** minor (gap 15: Print Page Options — page numbers, page info, crop marks)
+> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-19 · **Change:** minor (current-view automatic keywords and saved metadata viewer; no ranked Lightroom gap closed)
 
 Every known shortfall, one entry each, ranked by user impact (how many Lightroom users hit it, and
 how hard it blocks them), then by effort. **Agents pick work from the top** (the first entry nobody is
@@ -73,10 +73,21 @@ Beta-blocking gaps (B) total **~230–430 h**; with the stability and platform w
 - 2026-10-07: RW2 every format (#215), faces recognition in pure Rust (#174).
 - 2026-10-05: compressed NEF (#86). The older history is in [ROADMAP.md](../ROADMAP.md#progress-log).
 
+Local automatic keywords now offer two opt-in TinyCLIP models, with immediately searchable
+AI suggestions and catalog review history. Optional YOLOX Nano/Small supplies 80 common object classes alongside CLIP context tags, reusing model downloads, coverage and the background queue. Multi-label indexing now combines centre/full-frame evidence
+with bounded subject, scene, activity and style suggestions; combined-word searches require every term. Model downloads and selection live in Settings → Auto Tagging;
+the automatic switch lives there too. AI tags stay in searchable catalog metadata and All Metadata; ordinary keyword lists/counts contain manual and accepted keywords. Save Metadata to File preserves separate AI annotations in XMP sidecars without keyword promotion; other apps need explicit support for these fields. Keywords shows current-view coverage, Tag missing/Rescan, one progress bar with Cancel in the right sidebar, and review. PNG text metadata is visible in All Metadata.
+These additions do not establish free-form semantic search, multilingual or cross-platform quality
+parity; no ranked gap is closed. See [automatic keywords](automatic-keywords.md).
+
 ## Revision history
+
+ComfyUI PNG metadata search extends LR-FILT-SEARCH-META, including reindexing older imports with
+Reload from Disk. No ranked Lightroom gap or readiness estimate changes; see [the search guide](comfyui-search.md).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-19 | minor | Optional YOLOX objects with CLIP context and provenance; no ranked gap closed. |
 | 2026-10-18 | patch | Gap 1: six X-Trans CMOS 4 Fujifilm bodies (X-T30 …) take the X-T3's spectral matrices instead of the neutral matrix |
 | 2026-10-15 | minor | Gap 15 shrinks: the Page panel's Page Options (Page Numbers, Page Info, Crop Marks) print on Single Image and Contact Sheet pages; identity plate, watermark, photo info, Cut Guides, direct printing and JPEG output remain |
 | 2026-10-14 | minor | Gap 26: at 100k photos stack and album lookups are indexed, so an "In a Stack" or "Album" smart album counts in ~14 ms (was 0.6–2.7 s); open time unchanged |

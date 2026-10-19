@@ -3,7 +3,8 @@
 //! **Write** ([`Session::save_sidecar`], `photo.saveMetadataToFile`, or automatically after every
 //! change when [`XmpPrefs::auto_write`] is on): rating, colour label, title, caption, copyright,
 //! creator, keywords, capture time and GPS in the standard namespaces, plus our complete develop
-//! settings (`lc:settings`, JSON), the pick/reject flag (`lc:flag`) and location (`lc:location`).
+//! settings (`lc:settings`, JSON), pick/reject flag (`lc:flag`), location (`lc:location`), and
+//! separate AI annotations (`lc:aiTags`, RDF; no promotion to ordinary keywords).
 //! A sidecar is written only beside an original that is an existing file at an absolute path;
 //! otherwise the save fails.
 //!
@@ -35,6 +36,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{EngineError, Result, Session};
+
+mod autotags;
 
 /// Sidecar file naming.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -95,6 +98,7 @@ pub(crate) fn sidecar_candidates(original: &str, naming: SidecarNaming) -> impl 
 /// What a sidecar (or embedded XMP packet) says about a photo. `None` = not stated.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct SidecarData {
+    pub auto_tags: Option<lightcraft_catalog::autotags::AutoTags>,
     pub rating: Option<u8>,
     pub flag: Option<Flag>,
     pub label: Option<Option<ColorLabel>>,
@@ -141,6 +145,7 @@ pub fn parse_sidecar(xmp: &str, target: crate::crs::Target) -> std::result::Resu
     let m = &d.metadata;
     let lc = |k: &str| d.properties.get(&format!("lc:{k}")).and_then(|v| v.first()).cloned();
     let mut out = SidecarData {
+        auto_tags: d.values.get("lc:aiTags").and_then(autotags::read),
         title: m.title.clone(),
         caption: m.caption.clone(),
         copyright: m.copyright.clone(),
@@ -252,6 +257,11 @@ pub fn parse_sidecar(xmp: &str, target: crate::crs::Target) -> std::result::Resu
 /// Apply sidecar data to a photo record (the sidecar wins, except that a capture time embedded in
 /// the file is kept). Returns true if develop changed.
 pub fn merge_into(p: &mut Photo, sc: &SidecarData, now: &str) -> bool {
+    if let Some(ai) = &sc.auto_tags
+        && p.content_hash.as_deref() == Some(ai.content.as_str())
+    {
+        p.meta.auto_tags = Some(ai.clone());
+    }
     if p.captured.is_none() {
         p.captured = sc.captured.clone();
     }
@@ -288,6 +298,11 @@ pub fn merge_into(p: &mut Photo, sc: &SidecarData, now: &str) -> bool {
     }
     if let Some(k) = &sc.keywords {
         m.keywords = k.clone();
+    }
+    if let Some(ai) = &mut m.auto_tags {
+        for tag in &mut ai.tags {
+            tag.accepted &= m.keywords.iter().any(|k| lightcraft_catalog::keywords::same(k, &tag.name));
+        }
     }
     if let Some(r) = &sc.regions {
         m.regions = r.clone();
@@ -364,11 +379,15 @@ pub fn sidecar_packet_with(p: &Photo, cat: &lightcraft_catalog::Catalog, remove_
         Flag::Pick => "pick",
         Flag::Reject => "reject",
     };
-    let mut lc = vec![("settings", settings.as_str()), ("flag", flag)];
+    use lightcraft_meta::XmpValue;
+    let mut lc = vec![("settings", XmpValue::Text(settings)), ("flag", XmpValue::Text(flag.into()))];
     if !remove_location && !p.meta.location.trim().is_empty() {
-        lc.push(("location", p.meta.location.as_str()));
+        lc.push(("location", XmpValue::Text(p.meta.location.clone())));
     }
-    lightcraft_meta::write_xmp_lc(&meta, &lc)
+    if let Some(tags) = autotags::write(p) {
+        lc.push(("aiTags", tags));
+    }
+    lightcraft_meta::write_xmp_lc_values(&meta, &lc)
 }
 
 /// The properties LightCraft writes and owns in a sidecar: replaced on every save (removed when
