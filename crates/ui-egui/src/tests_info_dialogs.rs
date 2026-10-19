@@ -78,3 +78,21 @@ fn all_metadata_displays_and_copies_png_generator_fields() {
     h.step();
     assert!(h.view.clipboard.contains("Qwen"), "copied: {:?}; clipboard: {:?}", h.app.copied, h.view.clipboard);
 }
+
+#[test]
+fn location_view_action_is_available_without_a_photo_selection() {
+    let app = LightcraftApp::new(lightcraft_engine::Session::with_demo(), Services { png: None, ..Default::default() });
+    let mut h = Headless::new(app, [1300.0, 900.0], 1.0);
+    for (method, params) in
+        [("ui.set", json!({"right":"info","view":"photoGrid"})), ("engine.execute", json!({"command":"library.select","params":{"ids":[]}}))]
+    {
+        let r = h.request(method, params, T);
+        assert_eq!(r["ok"], true, "{r}");
+    }
+    h.settle(SETTLE);
+    assert!(has(&h, "button:fillLocationView"));
+    let r = h.request("ui.clickWidget", json!({"id":"button:fillLocationView"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.step();
+    assert!(h.app.session.activity.list().is_empty(), "Photos without GPS should not start a lookup");
+}

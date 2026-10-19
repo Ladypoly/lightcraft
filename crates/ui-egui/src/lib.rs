@@ -1128,6 +1128,7 @@ impl LightcraftApp {
         self.slideshow_tick(ctx);
         panels::faces::pump(self, ctx);
         panels::autotags::pump(self, ctx);
+        panels::locations::pump(self, ctx);
         // back from an external editor: pick up the files it saved
         let focused = ctx.input(|i| i.focused);
         if focused && !self.ui.was_focused && !self.ui.external_edits.is_empty() {
@@ -1218,6 +1219,7 @@ impl LightcraftApp {
         model_setup::pump(self, ctx);
         panels::faces::pump(self, ctx);
         panels::autotags::pump(self, ctx);
+        panels::locations::pump(self, ctx);
         focus_scan::pump(self, ctx);
         self.collect_screenshots(ctx);
         self.issue_screenshots(ctx);

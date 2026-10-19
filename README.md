@@ -221,6 +221,7 @@ For existing imports, select the images and choose **Photo → Reload from Disk*
 models. Open **Settings → Auto Tagging** to choose/download models and opt in. AI suggestions are
 searchable immediately; accept or dismiss them individually or for the selection. Tagging follows the current view, including Local folders, filters and subfolders.
 **Photo → All Metadata…** also shows embedded PNG text from image generators and saved catalog values.
+[Fill locations from GPS](docs/location-filling.md) for a selection or the current view with **Info → Fill view**.
 
 The **People** view groups named faces, including names read from XMP; face boxes can be edited in the loupe.
 On desktop, automatic detection and recognition use optional models installed through **Settings → Faces**; no weights are

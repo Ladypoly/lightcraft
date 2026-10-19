@@ -1,6 +1,6 @@
 # Gaps: where LightCraft falls short of Lightroom
 
-> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-19 · **Change:** minor (current-view automatic keywords and saved metadata viewer; no ranked Lightroom gap closed)
+> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-19 · **Change:** minor (current-view automatic keywords, GPS filling and saved metadata viewer; no ranked Lightroom gap closed)
 
 Every known shortfall, one entry each, ranked by user impact (how many Lightroom users hit it, and
 how hard it blocks them), then by effort. **Agents pick work from the top** (the first entry nobody is
@@ -88,6 +88,7 @@ Reload from Disk. No ranked Lightroom gap or readiness estimate changes; see [th
 | Date | Change | Summary |
 |---|---|---|
 | 2026-10-19 | minor | Optional YOLOX objects with CLIP context and provenance; no ranked gap closed. |
+| 2026-10-19 | minor | Current-view GPS filling, Local keyword generation and saved catalog metadata visibility; no ranked Lightroom gap closed. |
 | 2026-10-18 | patch | Gap 1: six X-Trans CMOS 4 Fujifilm bodies (X-T30 …) take the X-T3's spectral matrices instead of the neutral matrix |
 | 2026-10-15 | minor | Gap 15 shrinks: the Page panel's Page Options (Page Numbers, Page Info, Crop Marks) print on Single Image and Contact Sheet pages; identity plate, watermark, photo info, Cut Guides, direct printing and JPEG output remain |
 | 2026-10-14 | minor | Gap 26: at 100k photos stack and album lookups are indexed, so an "In a Stack" or "Album" smart album counts in ~14 ms (was 0.6–2.7 s); open time unchanged |

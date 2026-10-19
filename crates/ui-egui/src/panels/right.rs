@@ -32,6 +32,11 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 });
                 return;
             }
+            if app.ui.right == RightPanel::Info && !super::empty_library::shown(&app.session) {
+                header(ui, "Info");
+                padded(ui, |ui| super::locations::controls(app, ui, false));
+                return;
+            }
             let r = ui.max_rect();
             // every tab (Edit, Info, Versions…) says it: nothing to show until photos come in
             if super::empty_library::shown(&app.session) {
@@ -771,14 +776,9 @@ fn info(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
                     }
                 }
             });
-            if text_button(ui, "fillLocation", crate::i18n::tr("Fill Location"), false)
-                .on_hover_text(crate::i18n::tr("Fill empty City, State and Country from GPS (offline GeoNames place names)"))
-                .clicked()
-                && let Err(e) = app.run("metadata.reverseGeocode", json!({}))
-            {
-                app.toast_error(ui.ctx(), e);
-            }
         }
+        super::locations::controls(app, ui, m.gps.is_some());
+
         if let Some(a) = p.analysis {
             let mut line = crate::i18n::tr_format!("Focus {:.0}", a.sharpness);
             if a.clipped > 0.02 {
