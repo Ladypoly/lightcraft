@@ -19,10 +19,35 @@ Photo metadata: EXIF, XMP (read + write), IPTC-IIM, and the containers that carr
 35 mm equivalent, flash, exposure bias, program, metering, white balance), orientation, GPS, dimensions and the
 user fields (artist, copyright, title, caption, keywords, hierarchical keywords, rating −1…5, colour label).
 
+## ComfyUI PNG metadata
+
+`extract` and `png_chunks` also return a read-only `ComfyMetadata` index from CRC-valid
+`prompt` / `workflow` text chunks (`tEXt`, `zTXt`, compressed or uncompressed `iTXt`). Latin-1
+and UTF-8 text exporters are supported; international text (`iTXt`) requires UTF-8. API
+graphs use named inputs; UI workflows use conditioning links and standard widget layouts.
+Positive/negative prompt text, models, LoRAs, sampling parameters, seeds, VAE, dimensions,
+node types and unfamiliar parameter values are indexed. Unknown positional custom widgets
+remain available to free-text search; their field meanings cannot be inferred reliably.
+
+Values are lower-cased and deduplicated within each field; raw graphs are discarded. Limits:
+4 MiB per text chunk and decompressed JSON, at most 32 matching chunks and about 8 MiB of
+decoded text per PNG, 30,000 nodes / parameter visits, 32 levels of parameter traversal,
+8 KiB per indexed string and a 64 KiB aggregate index budget (before serialization overhead).
+JSON parsing retains serde_json's recursion limit. Invalid or excessive metadata is ignored
+without blocking the photo's import. Generation data is never written to XMP.
+
+Catalog integration and user searches: [ComfyUI metadata search](../../docs/comfyui-search.md).
+
+Standard widget names and ordering were checked against the
+[ComfyUI node definitions](https://github.com/Comfy-Org/ComfyUI/blob/master/nodes.py) and
+[SDXL text encoder definition](https://github.com/Comfy-Org/ComfyUI/blob/master/comfy_extras/nodes_clip_sdxl.py).
+
 ## XMP namespaces
 
 Written: `dc`, `xmp`, `photoshop`, `exif`, `exifEX`, `tiff`, `lr` (`hierarchicalSubject`) and ours,
-`lc` = `http://ns.lightcraft.app/lc/1.0/` (`lc:settings`, an opaque JSON string). Reading canonicalises
+`lc` = `http://ns.lightcraft.app/lc/1.0/` (`lc:settings`, an opaque JSON string).
+`write_xmp_lc_values` also writes structured RDF bags/resources for the engine’s separate `lc:aiTags`
+annotations (schema: [XMP interchange](../../docs/xmp-interop.md#ai-tags)). Reading canonicalises
 prefixes by namespace URI, handles attribute and element forms, `rdf:Seq`/`Bag`/`Alt` (x-default first),
 `rdf:parseType="Resource"` and nested-description structs, predefined and numeric entities. Nesting depth
 and node count are limited.
@@ -39,3 +64,9 @@ Parts 1–3 (packet, RDF serialisation, standard schemas, JPEG extended XMP), IP
 Metadata Standard, ITU-T T.81 (JPEG markers), ICC.1 (APP2 embedding), PNG Specification 3rd ed. (`eXIf`,
 `iTXt`), the WebP RIFF container specification, Adobe Photoshop File Format Specification (image resource
 blocks). XML parsing: `quick-xml` (MIT). No third-party metadata code was consulted.
+
+
+`png_text_fields(bytes)` reads original PNG tEXt/zTXt/iTXt values, regardless of generator,
+with CRC, chunk-count and decompression bounds shared with the ComfyUI indexer.
+`comfy_display_fields(fields, dimensions)` returns readable original-case fields for the metadata
+viewer; it does not store workflow JSON in the catalog. See `docs/comfyui-search.md` for viewer caps.

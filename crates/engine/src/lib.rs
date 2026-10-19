@@ -1249,6 +1249,8 @@ mod tests_albums_local;
 #[cfg(test)]
 mod tests_color;
 #[cfg(test)]
+mod tests_comfy;
+#[cfg(test)]
 mod tests_crop_angle;
 #[cfg(test)]
 mod tests_denoise;

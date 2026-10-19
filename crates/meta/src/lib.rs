@@ -11,6 +11,7 @@
 //! - [`cr3`] — the Canon CR3 container (metadata blocks, XMP, the JPEG and raw tracks).
 #![forbid(unsafe_code)]
 
+mod comfy;
 mod container;
 pub mod cr3;
 mod datetime;
@@ -19,10 +20,12 @@ pub mod focus;
 mod focus_read;
 mod gpx;
 mod iptc;
+mod png_text;
 pub mod tags;
 mod xmp;
 mod xmp_merge;
 
+pub use comfy::{ComfyMetadata, comfy_display_fields};
 pub use container::{Embedded, embedded, jpeg_segments, png_chunks, webp_chunks};
 pub use datetime::DateTime;
 pub use exif::{from_tiff, read_exif, strip_exif_header, try_read_exif, write_exif};
@@ -30,6 +33,7 @@ pub use focus::FocusPoint;
 pub use gpx::{GpxError, Match, TrackPoint, Tracklog, parse_gpx};
 pub use iptc::parse_iptc;
 pub use lightcraft_geom::{Orientation, Rect};
+pub use png_text::{PngTextField, png_text_fields};
 pub use tags::{TagRow, file_tag_rows, tag_rows};
 pub use xmp::{CRS_NS, LC_NS, XmpData, XmpError, XmpValue, parse_xmp, write_xmp, write_xmp_lc};
 pub use xmp_merge::{MergeRules, merge_xmp};
@@ -81,6 +85,9 @@ pub enum RegionKind {
 /// Everything LightCraft shows or searches about a photo. All fields are optional; unknown = `None`/empty.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Metadata {
+    /// Read-only ComfyUI generation search index (PNG text chunks).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comfy: Option<ComfyMetadata>,
     // camera
     pub make: Option<String>,
     pub model: Option<String>,
@@ -202,6 +209,9 @@ impl Metadata {
             rating,
             label
         );
+        if self.comfy.is_none() {
+            self.comfy = other.comfy.clone();
+        }
         if self.keywords.is_empty() {
             self.keywords = other.keywords.clone();
         }
@@ -282,6 +292,7 @@ impl Metadata {
 pub fn extract(bytes: &[u8]) -> Metadata {
     let e = embedded(bytes);
     let mut m = e.exif.as_deref().map(read_exif).unwrap_or_default();
+    m.comfy = e.comfy;
     if let Some(i) = e.iptc.as_deref() {
         m.fill_missing(&parse_iptc(i));
     }

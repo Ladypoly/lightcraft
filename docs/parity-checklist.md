@@ -1,6 +1,6 @@
 # Lightroom parity checklist
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-15 · **Change:** minor (LRC-PRINT-PAGE: Print Page Options) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-19 · **Change:** minor (LRC-PRINT-PAGE: Print Page Options) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 The measured, row-by-row checklist: one row per Lightroom feature, menu item and shortcut, what we
 have and what is missing. It answers *does the feature exist?* (feature breadth). Whether it is good
@@ -148,7 +148,7 @@ differences and missing bindings are in [ui-parity.md](ui-parity.md#shortcuts).
 
 | Id | Feature | Tier | Status | Evidence | Missing / notes |
 |---|---|---|---|---|---|
-| LR-FILT-SEARCH-META | Text search | P0 | ✅ | `cmd:library.filter` (`text`), `crates/ui-egui/src/panels/topbar.rs`, `crates/catalog/src/query.rs` | fielded tokens (`rating:3`, `iso:>800`, `camera:…`); no suggestions dropdown |
+| LR-FILT-SEARCH-META | Text search | P0 | ✅ | `cmd:library.filter` (`text`), `cmd:photo.reload`, `crates/ui-egui/src/panels/topbar.rs`, `crates/catalog/src/query.rs`, `crates/meta/src/comfy.rs` | fielded tokens (`rating:3`, `iso:>800`, `camera:…`), quoted phrases and ComfyUI PNG metadata (`comfy:true`, `prompt:`, `model:`, `lora:`, `sampler:`, exact `seed:`, numeric `steps:` / `cfg:`); indexed at import, existing images reindexed with Reload from Disk; no suggestions dropdown |
 | LR-FILT-SEARCH-AI | Natural-language search | P2 | ⬜ | | |
 | LR-FILT-RATING | Rating filter | P0 | ✅ | `cmd:library.filter` (`rating`, `ratingOp`), `crates/ui-egui/src/panels/filterbar.rs` | ≥ / = / ≤ stars in the filter bar (`cmd:view.filterBar`) |
 | LR-FILT-FLAG | Flag filter | P0 | ✅ | `cmd:library.filter` (`flag`), `crates/ui-egui/src/panels/filterbar.rs` | picked / rejected / unflagged (one at a time) |
@@ -793,10 +793,13 @@ Mincho faces (BIZ UDMincho; on the web build, BIZ UDPGothic) when built with `CR
 Latin stays upright. Advanced Japanese composition remains open. Regression coverage:
 `export::tests::japanese_watermarks_support_vertical_columns`, `japanese_watermark_options_and_legacy_defaults`, `watermarks_work_without_craft_fonts`.
 
+ComfyUI PNG metadata search extends the existing text-search row. No ranked gap is closed; see [the search guide](comfyui-search.md).
+
 ## Revision history
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-19 | minor | ComfyUI: focused review split; statuses unchanged; no ranked gap closed. |
 | 2026-10-14 | patch | LR-EXP-TYPE: opaque 8-bit PNG/TIFF/WebP use RGB; transparent exports retain alpha (#1670). Statuses and feature counts unchanged. |
 | 2026-10-15 | minor | LRC-PRINT-PAGE: Page Options (Page Numbers, Page Info, Crop Marks) on Single Image and Contact Sheet pages, in the Print dialog, `print.set` and templates; still 🟡 (no identity plate, watermark, photo info or Cut Guides) |
 | 2026-10-15 | minor | LR-IMP-FORMATS: Hasselblad 3FR and FFF show their uncompressed RGB preview (no JPEG in these files) in the grid and loupe until developed, and as the stand-in when a file fails to decode; status unchanged (🟡) |
