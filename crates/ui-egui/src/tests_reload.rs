@@ -33,7 +33,7 @@ impl Gate {
 }
 
 fn app() -> (LightcraftApp, Arc<Gate>) {
-    let mut session = lightcraft_engine::Session::new();
+    let mut session = lightcraft_engine::Session::new().with_fs();
     for id in 1..=2 {
         let path = format!("/photos/{id}.png");
         let mut photo = Photo::new(PhotoId(id), Source::File { path }, &format!("{id}.png"), "PNG", 2, 1, "now");
@@ -129,6 +129,35 @@ fn batch_reload_drops_removed_replaced_and_other_library_results() {
     assert!(crate::tasks::wait(&mut app, &egui::Context::default(), Duration::from_secs(10)));
     assert_eq!(app.session.catalog.to_snapshot(), before);
     assert!(app.session.undo.is_empty());
+    drop(app);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn batch_reload_does_not_suppress_the_next_edits_automatic_xmp_write() {
+    let (mut app, gate) = app();
+    let dir = std::env::temp_dir().join(format!("lc-ui-reload-xmp-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    for id in [PhotoId(1), PhotoId(2)] {
+        let mut photo = (**app.session.catalog.photo(id).unwrap()).clone();
+        let path = dir.join(&photo.file_name);
+        std::fs::write(&path, b"source bytes remain unchanged").unwrap();
+        photo.source = Source::File { path: path.to_string_lossy().into_owned() };
+        app.session.catalog.apply(Op::RemovePhoto { id }).unwrap();
+        app.session.catalog.apply(Op::AddPhoto { photo: Box::new(photo) }).unwrap();
+    }
+    app.run("library.xmpPreferences", json!({"autoWrite":true})).unwrap();
+    app.run("photo.reload", json!({"ids":[1,2]})).unwrap();
+    gate.wait_started();
+    gate.release();
+    assert!(crate::tasks::wait(&mut app, &egui::Context::default(), Duration::from_secs(10)));
+    assert!(!dir.join("1.xmp").exists());
+    assert!(!dir.join("2.xmp").exists());
+    app.run("photo.setMeta", json!({"ids":[1],"title":"Persist the next edit"})).unwrap();
+    let packet = std::fs::read_to_string(dir.join("1.xmp")).unwrap();
+    assert_eq!(lightcraft_meta::parse_xmp(&packet).unwrap().metadata.title.as_deref(), Some("Persist the next edit"));
+    assert!(!dir.join("2.xmp").exists());
+    assert_eq!(std::fs::read(dir.join("1.png")).unwrap(), b"source bytes remain unchanged");
     drop(app);
     std::fs::remove_dir_all(dir).unwrap();
 }

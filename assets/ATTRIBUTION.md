@@ -52,5 +52,4 @@ Notes
 | `crates/autotag/tests/fixtures/cat-only.jpg` | Chelsea the cat | Stefan van der Walt | https://scikit-image.org/docs/stable/api/skimage.data.html#skimage.data.chelsea | CC0 1.0 | 2026-10-19 | JPEG re-encoded; metadata removed |
 | `crates/autotag/tests/fixtures/coffee-cup.jpg` | Coffee cup, courtesy of Pikolo Espresso Bar | Rachel Michetti | https://scikit-image.org/docs/stable/api/skimage.data.html#skimage.data.coffee | CC0 1.0 | 2026-10-19 | resized to at most 512 px, JPEG re-encoded; metadata removed |
 | `crates/autotag/tests/fixtures/camera-person-outdoors.jpg` | Cameraman | Lav Varshney | https://scikit-image.org/docs/stable/api/skimage.data.html#skimage.data.camera | CC0 1.0 | 2026-10-19 | grayscale converted to RGB, JPEG re-encoded; metadata removed |
-
 | external: YOLOX Nano/Small (downloaded, not bundled) | YOLOX COCO pretrained ONNX weights, release 0.1.1rc0 | Megvii, Inc. and affiliates | https://github.com/Megvii-BaseDetection/YOLOX | Apache-2.0; `assets/licenses/YOLOX-Apache-2.0.txt` | 2026-10-19 | Unmodified official weights; size and SHA-256 pinned in `crates/autotag/src/lib.rs`. |

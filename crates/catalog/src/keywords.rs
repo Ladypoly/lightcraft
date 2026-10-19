@@ -350,16 +350,17 @@ impl Catalog {
                             continue;
                         }
                         let names = f(std::slice::from_ref(&tag.name));
-                        if names != [tag.name.clone()] && !ai.dismissed.iter().any(|n| same(n, &tag.name)) {
+                        let changed = names != [tag.name.clone()];
+                        let kept = names.iter().any(|n| same(n, &tag.name));
+                        if !kept && !ai.dismissed.iter().any(|n| same(n, &tag.name)) {
                             ai.dismissed.push(tag.name.clone());
                         }
                         for name in names {
                             // Renaming a suggestion is a human decision: keep it through model changes.
-                            let accepted = tag.accepted || name != tag.name;
-                            if accepted && !meta.keywords.iter().any(|k| same(k, &name)) {
+                            if changed && !meta.keywords.iter().any(|k| same(k, &name)) {
                                 meta.keywords.push(name.clone());
                             }
-                            tags.push(crate::autotags::AutoTag { name, accepted, ..tag.clone() });
+                            tags.push(crate::autotags::AutoTag { name, accepted: true, ..tag.clone() });
                         }
                     }
                     ai.tags = tags;

@@ -24,7 +24,7 @@ pub fn start(app: &mut LightcraftApp, params: &Value) -> Result<Value, String> {
             app.toast(ctx, crate::i18n::tr("Metadata reload cancelled."));
             return;
         }
-        match convert::apply_reload(&mut app.session, results) {
+        match app.session.execute_fn("photo.reload", |s| convert::apply_reload(s, results)) {
             Ok(report) => {
                 let n = report["reloaded"].as_array().map_or(0, Vec::len);
                 let failed = report["failed"].as_array().map_or(0, Vec::len);

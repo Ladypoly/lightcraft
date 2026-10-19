@@ -164,3 +164,37 @@ fn ai_metadata_stays_searchable_without_creating_ordinary_keyword_entries() {
     assert_eq!(c.photo(PhotoId(1)).unwrap().keyword_count(), 2);
     assert_eq!(c.keyword_path("places|church").as_deref(), Some("Places|Church"));
 }
+
+#[test]
+fn removing_an_accepted_keyword_survives_unrelated_keyword_operations() {
+    let mut c = catalog();
+    let id = PhotoId(1);
+    let mut meta = c.photo(id).unwrap().meta.clone();
+    meta.auto_tags.as_mut().unwrap().tags[0].accepted = true;
+    c.apply(Op::SetMeta { id, meta: Box::new(meta) }).unwrap();
+    for op in [
+        c.rename_keyword_ops("Portfolio", "Work").unwrap(),
+        c.merge_keywords_ops(&["Portfolio".into()], "Work").unwrap(),
+        c.delete_keyword_ops("Portfolio").unwrap(),
+    ] {
+        let undo = c.apply(op).unwrap();
+        assert!(!c.photo(id).unwrap().meta.keywords.iter().any(|k| k == "Places|Church"));
+        assert!(c.photo(id).unwrap().meta.auto_tags.as_ref().unwrap().tags[0].accepted);
+        c.apply(undo).unwrap();
+    }
+}
+
+#[test]
+fn case_only_rename_keeps_accepted_provenance_without_dismissing_the_name() {
+    let mut c = catalog();
+    let id = PhotoId(1);
+    let mut meta = c.photo(id).unwrap().meta.clone();
+    meta.keywords.push("Places|Church".into());
+    meta.auto_tags.as_mut().unwrap().tags[0].accepted = true;
+    c.apply(Op::SetMeta { id, meta: Box::new(meta) }).unwrap();
+    c.apply(c.rename_keyword_ops("Places", "places").unwrap()).unwrap();
+    let ai = c.photo(id).unwrap().meta.auto_tags.as_ref().unwrap();
+    assert_eq!(ai.tags[0].name, "places|Church");
+    assert!(ai.tags[0].accepted);
+    assert!(ai.dismissed.is_empty());
+}

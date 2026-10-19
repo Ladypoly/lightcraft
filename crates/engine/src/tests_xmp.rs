@@ -125,6 +125,44 @@ fn only(s: &Session) -> PhotoId {
 }
 
 #[test]
+fn case_only_accepted_tag_rename_keeps_provenance_through_xmp() {
+    use lightcraft_catalog::{
+        Op,
+        autotags::{AutoTag, AutoTags},
+    };
+    let dir = temp_dir("ai-case-rename");
+    let path = dir.join("cat.png");
+    write_png(&path, 8);
+    let mut s = Session::new().with_fs();
+    s.execute("library.import", &json!({"paths":[path]})).unwrap();
+    let id = only(&s);
+    s.execute("library.select", &json!({"ids":[id.0]})).unwrap();
+    let photo = s.catalog.photo(id).unwrap();
+    let mut meta = photo.meta.clone();
+    meta.keywords = vec!["Places|Church".into()];
+    meta.auto_tags = Some(AutoTags {
+        model: "test-index".into(),
+        content: photo.content_key(),
+        tags: vec![AutoTag { name: "Places|Church".into(), score: 0.4, model: "tinyclip-8m".into(), accepted: true }],
+        dismissed: vec![],
+    });
+    s.commit("fixture", Op::SetMeta { id, meta: Box::new(meta) }).unwrap();
+    s.execute_fn("keyword.rename", |s| {
+        s.commit("Rename", s.catalog.rename_keyword_ops("Places", "places")?)?;
+        Ok(json!({}))
+    })
+    .unwrap();
+    let expected = s.catalog.photo(id).unwrap().meta.auto_tags.clone();
+    let report = s.execute("photo.saveMetadataToFile", &json!({})).unwrap();
+    assert!(report["failed"].as_array().unwrap().is_empty(), "{report}");
+    let report = s.execute("photo.readMetadataFromFile", &json!({})).unwrap();
+    assert!(report["failed"].as_array().unwrap().is_empty(), "{report}");
+    assert_eq!(s.catalog.photo(id).unwrap().meta.auto_tags, expected);
+    drop(s);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn save_delete_library_reimport_restores_edits() {
     let src = temp_dir("roundtrip-src");
     let lib = temp_dir("roundtrip-lib");

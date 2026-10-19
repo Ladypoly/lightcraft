@@ -120,6 +120,20 @@ fn automatic_keyword_progress_uses_the_shared_activity_task() {
     task.progress(7, 10);
     h.step();
     assert!(h.app.widgets.iter().any(|(w, _)| w == "tags:progress"));
+    for right in ["info", "edit"] {
+        assert_eq!(h.request("ui.set", json!({"right":right}), t)["ok"], true);
+        h.step();
+        h.step();
+        assert!(!h.app.widgets.iter().any(|(w, _)| w == "button:tags:cancel"));
+        assert!(h.app.widgets.iter().any(|(w, _)| w == &format!("activity:cancel:{}", task.id())));
+    }
+    assert_eq!(h.request("ui.set", json!({"right":"keywords"}), t)["ok"], true);
+    h.step();
+    assert_eq!(h.request("ui.clickWidget", json!({"id":"section:automatic_keywords"}), t)["ok"], true);
+    h.step();
+    assert!(h.app.widgets.iter().any(|(w, _)| w == &format!("activity:cancel:{}", task.id())));
+    assert_eq!(h.request("ui.clickWidget", json!({"id":"section:automatic_keywords"}), t)["ok"], true);
+    h.step();
     // This task is a fixture, not Scan's worker; cancellation must not start real inference.
     h.app.session.tagging.settings.enabled = false;
     let r = h.request("ui.clickWidget", json!({"id":"button:tags:cancel"}), t);
@@ -208,4 +222,19 @@ fn tagging_settings_select_detector_without_adding_sidebar_controls() {
         h.settle(t);
     }
     assert!(h.app.session.tagging.settings.detector.is_none());
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn failed_tagging_pump_waits_before_retrying() {
+    let mut session = lightcraft_engine::Session::with_demo();
+    session.tagging.settings.enabled = true;
+    session.tagging.settings.model = "unknown-test-model".into();
+    let mut app = LightcraftApp::new(session, Default::default());
+    let ctx = egui::Context::default();
+    crate::panels::autotags::pump(&mut app, &ctx);
+    let next = ctx.data(|d| d.get_temp::<f64>(egui::Id::new("automatic-keywords-next-pump"))).unwrap();
+    assert_eq!(next, ctx.input(|i| i.time) + 5.0);
+    crate::panels::autotags::pump(&mut app, &ctx);
+    assert_eq!(ctx.data(|d| d.get_temp::<f64>(egui::Id::new("automatic-keywords-next-pump"))), Some(next));
 }

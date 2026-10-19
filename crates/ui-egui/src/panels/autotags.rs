@@ -46,6 +46,7 @@ pub fn pump(app: &mut LightcraftApp, ctx: &egui::Context) {
     }
     let pace = super::faces::background_pace(app, ctx, now);
     let Ok(v) = app.session.execute("tags.pump", &json!({"pace":pace})) else {
+        ctx.data_mut(|d| d.insert_temp(key, now + 5.0));
         return;
     };
     let downloading = app.session.tagging.downloads.running();
@@ -255,6 +256,10 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         let button = ui
             .add_enabled_ui(cancel.is_some(), |ui| text_button(ui, "tags:cancel", if cancel.is_some() { "Cancel" } else { "Stopping…" }, false))
             .inner;
+        if ui.is_rect_visible(button.rect) {
+            let frame = ui.ctx().cumulative_frame_nr();
+            ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("tags-inline-progress-frame"), frame));
+        }
         if button.clicked()
             && let Some(id) = cancel
         {

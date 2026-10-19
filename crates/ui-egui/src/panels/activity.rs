@@ -62,8 +62,9 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
     }
     // look again soon: a young task becomes due, bars move
     ctx.request_repaint_after(std::time::Duration::from_millis(100));
-    // Tagging has its coverage, progress and cancel control in the right sidebar.
-    let tasks: Vec<&TaskInfo> = all.iter().filter(|t| t.kind != "tags" && t.age_ms >= SHOW_AFTER_MS).collect();
+    // Show one tagging indicator, with a reachable Cancel even when its sidebar section is hidden.
+    let inline_tags = ctx.data(|d| d.get_temp::<u64>(egui::Id::new("tags-inline-progress-frame"))) == Some(ctx.cumulative_frame_nr());
+    let tasks: Vec<&TaskInfo> = all.iter().filter(|t| (!inline_tags || t.kind != "tags") && t.age_ms >= SHOW_AFTER_MS).collect();
     if tasks.is_empty() {
         return;
     }

@@ -8,8 +8,9 @@ In **Keywords → Automatic Keywords**, a count such as **800 / 850 images tagge
 for the current view, including its filters and subfolder setting. **Tag missing** processes only
 unscanned or outdated images, without turning on automatic tagging. When the view is complete, the
 same button becomes **Rescan**, which processes the current view again. A thin progress bar appears
-while a scan runs, with **Cancel** in the same section. Tagging does not also appear in the floating
-activity stack. Images processed with no confident
+while a scan runs, with **Cancel** in the same section. When this control is visible, tagging does
+not also appear in the floating activity stack. If it is hidden, the shared activity stack provides
+progress and Cancel instead. Images processed with no confident
 suggestions still count as complete. Failed images remain missing and can be retried with **Tag missing**.
 
 New photos increase the total as they enter the view. Turning on automatic tagging queues them;
