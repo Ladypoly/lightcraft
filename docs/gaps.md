@@ -129,3 +129,5 @@ Opt-in local automatic tagging adds immediately searchable catalog annotations, 
 | 2026-10-10 | minor | Gap 8: Sony ILCE-7RM6 in-file distortion added next to the ILCE-7RM4A's, its lateral CA parsed but off by default (docs/sony-ilce7rm6-lens-corrections.md); the gap stays open (no lens database), hours unchanged |
 | 2026-10-14 | minor | Gap 10 shrinks: 97 Canon CR2, Pentax and Ricoh models verified on one CC0 file each (334 models, ~50% on a verified body) |
 | 2026-10-14 | minor | Gap 10: 515 of 1,446 models verified (36%), ~84% of photographers on a verified body (integration batch 36) |
+
+Separate AI annotations round-trip through merged XMP sidecars without promotion to ordinary keywords; other applications need field mapping.

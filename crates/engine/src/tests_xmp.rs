@@ -43,8 +43,123 @@ fn write_png(path: &Path, seed: u8) {
     std::fs::write(path, bytes).unwrap();
 }
 
+#[test]
+fn ai_tags_xmp_save_read_and_fresh_library_keep_keywords_separate() {
+    use lightcraft_catalog::{
+        Op,
+        autotags::{AutoTag, AutoTags},
+    };
+    let dir = temp_dir("ai-tags-portable");
+    let path = dir.join("cat.png");
+    write_png(&path, 8);
+    let original = std::fs::read(&path).unwrap();
+    let mut s = Session::new().with_fs();
+    s.open_library(dir.join("library"), false).unwrap();
+    s.execute("library.import", &json!({"paths":[path]})).unwrap();
+    let id = only(&s);
+    s.execute("library.select", &json!({"ids":[id.0]})).unwrap();
+    let p = s.catalog.photo(id).unwrap();
+    let mut meta = p.meta.clone();
+    meta.keywords = vec!["holiday".into()];
+    meta.auto_tags = Some(AutoTags {
+        model: "test-index".into(),
+        content: p.content_key(),
+        tags: vec![
+            AutoTag { name: "cat".into(), score: 0.8, model: "yolox-s".into(), accepted: false },
+            AutoTag { name: "chair".into(), score: 0.7, model: "yolox-s".into(), accepted: false },
+            AutoTag { name: "holiday".into(), score: 0.4, model: "tinyclip-8m".into(), accepted: true },
+        ],
+        dismissed: vec!["dog".into()],
+    });
+    let expected = meta.auto_tags.clone();
+    s.commit("fixture", Op::SetMeta { id, meta: Box::new(meta) }).unwrap();
+    assert!(!dir.join("cat.xmp").exists());
+    let foreign = r#"<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:other="https://example.org/meta/"><other:note>Keep &amp; preserve</other:note></rdf:Description></rdf:RDF>"#;
+    std::fs::write(dir.join("cat.xmp"), foreign).unwrap();
+    let saved = s.execute("photo.saveMetadataToFile", &json!({})).unwrap();
+    assert!(saved["failed"].as_array().unwrap().is_empty(), "{saved}");
+    let packet = std::fs::read_to_string(dir.join("cat.xmp")).unwrap();
+    assert!(packet.contains("<other:note>Keep &amp; preserve</other:note>"));
+    let xmp = lightcraft_meta::parse_xmp(&packet).unwrap();
+    assert_eq!(xmp.metadata.keywords, ["holiday"]);
+    assert_eq!(xmp.values["lc:aiTags"].field("lc:tags").unwrap().items().len(), 3);
+    assert!(!packet.contains(&path.to_string_lossy().to_string()));
+    s.execute("tags.review", &json!({"action":"dismiss"})).unwrap();
+    assert!(s.catalog.photo(id).unwrap().suggested_tags().next().is_none());
+    s.execute("photo.readMetadataFromFile", &json!({})).unwrap();
+    assert_eq!(s.catalog.photo(id).unwrap().meta.auto_tags, expected);
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert!(s.catalog.photo(id).unwrap().suggested_tags().next().is_none());
+    drop(s);
+    // A different path and catalog still restore portable identity and immediate AND search.
+    let copy = dir.join("copied.png");
+    std::fs::write(&copy, &original).unwrap();
+    std::fs::write(dir.join("copied.xmp"), &packet).unwrap();
+    let mut fresh = Session::new().with_fs();
+    fresh.open_library(dir.join("fresh-library"), false).unwrap();
+    fresh.execute("library.import", &json!({"paths":[copy]})).unwrap();
+    let restored = only(&fresh);
+    assert_eq!(fresh.catalog.photo(restored).unwrap().meta.auto_tags, expected);
+    assert_eq!(fresh.catalog.photo(restored).unwrap().meta.keywords, ["holiday"]);
+    assert_eq!(fresh.catalog.keyword_tree().len(), 1);
+    assert_eq!(fresh.execute("catalog.query", &json!({"filter":{"text":"tag:cat tag:chair"}})).unwrap()["total"], 1);
+    drop(fresh);
+    let mut fresh = Session::new().with_fs();
+    fresh.open_library(dir.join("fresh-library"), false).unwrap();
+    assert_eq!(fresh.catalog.photo(restored).unwrap().meta.auto_tags, expected);
+    assert_eq!(std::fs::read(&path).unwrap(), original);
+    // A valid sidecar attached to changed pixels must not restore stale predictions.
+    let replacement = dir.join("replacement.png");
+    write_png(&replacement, 9);
+    std::fs::write(dir.join("replacement.xmp"), &packet).unwrap();
+    fresh.execute("library.import", &json!({"paths":[replacement]})).unwrap();
+    let p = fresh.catalog.photos().find(|p| p.file_name == "replacement.png").unwrap();
+    assert!(p.meta.auto_tags.is_none());
+    assert_eq!(p.meta.keywords, ["holiday"]);
+    drop(fresh);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 fn only(s: &Session) -> PhotoId {
     s.catalog.photos().next().unwrap().id
+}
+
+#[test]
+fn case_only_accepted_tag_rename_keeps_provenance_through_xmp() {
+    use lightcraft_catalog::{
+        Op,
+        autotags::{AutoTag, AutoTags},
+    };
+    let dir = temp_dir("ai-case-rename");
+    let path = dir.join("cat.png");
+    write_png(&path, 8);
+    let mut s = Session::new().with_fs();
+    s.execute("library.import", &json!({"paths":[path]})).unwrap();
+    let id = only(&s);
+    s.execute("library.select", &json!({"ids":[id.0]})).unwrap();
+    let photo = s.catalog.photo(id).unwrap();
+    let mut meta = photo.meta.clone();
+    meta.keywords = vec!["Places|Church".into()];
+    meta.auto_tags = Some(AutoTags {
+        model: "test-index".into(),
+        content: photo.content_key(),
+        tags: vec![AutoTag { name: "Places|Church".into(), score: 0.4, model: "tinyclip-8m".into(), accepted: true }],
+        dismissed: vec![],
+    });
+    s.commit("fixture", Op::SetMeta { id, meta: Box::new(meta) }).unwrap();
+    s.execute_fn("keyword.rename", |s| {
+        s.commit("Rename", s.catalog.rename_keyword_ops("Places", "places")?)?;
+        Ok(json!({}))
+    })
+    .unwrap();
+    let expected = s.catalog.photo(id).unwrap().meta.auto_tags.clone();
+    let report = s.execute("photo.saveMetadataToFile", &json!({})).unwrap();
+    assert!(report["failed"].as_array().unwrap().is_empty(), "{report}");
+    let report = s.execute("photo.readMetadataFromFile", &json!({})).unwrap();
+    assert!(report["failed"].as_array().unwrap().is_empty(), "{report}");
+    assert_eq!(s.catalog.photo(id).unwrap().meta.auto_tags, expected);
+    drop(s);
+    std::fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]

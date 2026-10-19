@@ -86,6 +86,26 @@ Ordinary keyword rename/delete actions leave unaccepted AI metadata alone. Accep
 before editing it through the keyword manager; accepted keywords retain their AI provenance.
 Dismiss an unwanted prediction in the AI section to remember that decision across rescans.
 
+## Saving AI tags beside images
+
+Select one or more photos, then use **Photo → Save Metadata to File** (**Ctrl+S** on Windows/Linux,
+**Cmd+S** on macOS). This writes the usual XMP sidecars beside the originals, including AI tags in
+the separate **lc:aiTags** field. No acceptance is needed. Ordinary `dc:subject` and
+`lr:hierarchicalSubject` keywords are not populated with suggestions. Existing sidecars are merged,
+preserving other applications’ properties. Original image files are unchanged.
+
+The structured RDF field stores each name, score, model identifier and acceptance state, plus dismissed
+names, index identity and a source-file fingerprint. On import into a fresh LightCraft catalog, or
+**Photo → Read Metadata from File**, matching files recover searchable AI tags without inference.
+Copies and renames work; a sidecar for changed/replaced bytes does not restore stale predictions.
+Empty completed scans also round-trip. Original-file export carries the same sidecar; rendered
+JPEG/PNG/TIFF exports do not yet embed these annotations.
+
+This uses LightCraft’s documented XMP namespace, not a universally supported AI-keyword standard.
+Other applications and scripts can read the structured fields, but must support/map them to index
+them separately. Apps that only read ordinary keywords will not search these AI tags. Use **Accept**
+only when you want ordinary keywords for that broader compatibility. See the [XMP schema](xmp-interop.md#ai-tags).
+
 ## Reindexing and offline files
 
 **Rescan** scans a fully processed view with the selected model again, retaining manual keywords, accepted
@@ -181,4 +201,4 @@ to measure CPU load time and 18 inference samples on six public fixtures. This e
 rendering, catalog/UI overhead and cold-disk effects. The dev-only downloader accepts the benchmark
 executable path: `python crates/autotag/tools/download-models.py <path-to-tagging-bench>`.
 
-AI tags remain in the catalog in this proposal. Portable XMP annotations and model-validation CI are separate follow-ups.
+Model-validation CI is proposed separately.
