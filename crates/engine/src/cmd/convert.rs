@@ -227,8 +227,6 @@ pub(crate) fn content_op(id: lightcraft_catalog::PhotoId, ph: &lightcraft_catalo
 fn fill_missing_meta(id: lightcraft_catalog::PhotoId, ph: &lightcraft_catalog::Photo, info: &crate::media::ProbeInfo) -> Vec<Op> {
     let (mut m, src) = (ph.meta.clone(), &info.meta);
     let before = m.clone();
-    // Generation metadata describes the current source, including when a replacement removes it.
-    m.comfy = src.comfy.clone();
     if m.camera.is_empty() {
         m.camera = src.camera.clone();
     }
@@ -348,9 +346,13 @@ fn reload(s: &mut Session, p: &Value) -> Result<Value> {
     let mut ops = Vec::new();
     let mut reloaded = Vec::new();
     let mut failed = Vec::new();
+    let mut indexed = Vec::new();
     for ((id, path), info) in paths.into_iter().zip(probed) {
         match info {
-            Ok(info) => reload_ops(&s.catalog, id, copies.get(&id).map(Vec::as_slice).unwrap_or(&[]), &info, &mut ops, &mut reloaded),
+            Ok(info) => {
+                reload_ops(&s.catalog, id, copies.get(&id).map(Vec::as_slice).unwrap_or(&[]), &info, &mut ops, &mut reloaded);
+                indexed.push((id, info));
+            }
             Err(error) => failed.push(json!({"id":id.0,"path":path,"error":error})),
         }
     }
@@ -360,6 +362,17 @@ fn reload(s: &mut Session, p: &Value) -> Result<Value> {
     if !ops.is_empty() {
         s.commit("Reload Changed Files", Op::Batch { ops })?;
         s.skip_auto_write = true;
+    }
+    let mut included: std::collections::HashSet<_> = reloaded.iter().copied().collect();
+    let indexed: Vec<_> = indexed
+        .iter()
+        .flat_map(|(id, info)| std::iter::once(*id).chain(copies.get(id).into_iter().flatten().copied()).map(move |id| (id, info)))
+        .collect();
+    let namings = s.sidecar_namings(&indexed.iter().map(|(id, _)| *id).collect::<Vec<_>>());
+    for ((id, info), naming) in indexed.into_iter().zip(namings) {
+        if s.index_metadata_search(id, info, naming) && included.insert(id) {
+            reloaded.push(id);
+        }
     }
     Ok(json!({"reloaded":reloaded.iter().map(|id|id.0).collect::<Vec<_>>(),"failed":failed}))
 }
@@ -426,7 +439,7 @@ pub fn edit_specs() -> Vec<CommandSpec> {
             "Reload from Disk",
             ["Photo"],
             None,
-            "{ids?} — re-read photos whose files changed on disk, or reindex existing ComfyUI PNG metadata; camera fields the catalog lacks are filled in, and so is the lens data the file carries (an untouched photo then gets its lens correction turned on as import would; an edited one keeps its settings). Generation metadata is replaced, including when removed from the source. Never writes image files or sidecars → {reloaded, failed: [{id, path, error}]}",
+            "{ids?} — re-read photos whose files changed on disk, or reindex existing ComfyUI PNG metadata; camera fields the catalog lacks are filled in, and so is the lens data the file carries (an untouched photo then gets its lens correction turned on as import would; an edited one keeps its settings). Derived search metadata is replaced, including when removed from the source. Never writes image files or sidecars → {reloaded, failed: [{id, path, error}]}",
             has_selection,
             reload
         ),

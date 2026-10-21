@@ -21,6 +21,7 @@ mod focus_read;
 mod gpx;
 mod iptc;
 mod png_text;
+mod search;
 pub mod tags;
 mod xmp;
 mod xmp_merge;
@@ -34,6 +35,7 @@ pub use gpx::{GpxError, Match, TrackPoint, Tracklog, parse_gpx};
 pub use iptc::parse_iptc;
 pub use lightcraft_geom::{Orientation, Rect};
 pub use png_text::{PngTextField, png_text_fields};
+pub use search::{SEARCH_BYTES, SearchMetadata, search_metadata};
 pub use tags::{TagRow, file_tag_rows, tag_rows};
 pub use xmp::{CRS_NS, LC_NS, XmpData, XmpError, XmpValue, parse_xmp, write_xmp, write_xmp_lc};
 pub use xmp_merge::{MergeRules, merge_xmp};
@@ -290,7 +292,17 @@ impl Metadata {
 /// Read everything we understand from a whole file (JPEG, PNG, WebP, TIFF-based incl. DNG/raw).
 /// Precedence: EXIF, then IPTC fills gaps, then XMP overrides user fields and fills the rest.
 pub fn extract(bytes: &[u8]) -> Metadata {
+    extract_embedded(embedded(bytes))
+}
+
+/// Import/refresh: share the parsed container and generation graph with the derived search index.
+pub fn extract_with_search(bytes: &[u8]) -> (Metadata, SearchMetadata) {
     let e = embedded(bytes);
+    let index = search::from_embedded(bytes, &e);
+    (extract_embedded(e), index)
+}
+
+fn extract_embedded(e: Embedded) -> Metadata {
     let mut m = e.exif.as_deref().map(read_exif).unwrap_or_default();
     m.comfy = e.comfy;
     if let Some(i) = e.iptc.as_deref() {

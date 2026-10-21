@@ -110,8 +110,8 @@ pub fn png_text_fields(bytes: &[u8]) -> Vec<PngTextField> {
             break;
         };
         if matches!(typ, b"tEXt" | b"zTXt" | b"iTXt")
-            && !data.starts_with(b"XML:com.adobe.xmp\0")
             && let Some(field) = decoder.chunk(typ, data, crc)
+            && field.name != "XML:com.adobe.xmp"
         {
             out.push(field);
         }

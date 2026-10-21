@@ -153,6 +153,7 @@ pub fn png_chunks(b: &[u8]) -> Embedded {
         return out;
     }
     let mut comfy = crate::comfy::PngIndex::default();
+    let mut text = crate::png_text::Decoder::default();
     let mut dimensions = None;
     let mut i = 8usize;
     while i + 12 <= b.len() {
@@ -168,17 +169,13 @@ pub fn png_chunks(b: &[u8]) -> Embedded {
                     .zip(data.get(4..8))
                     .and_then(|(w, h)| Some((u32::from_be_bytes(w.try_into().ok()?), u32::from_be_bytes(h.try_into().ok()?))));
             }
-            b"tEXt" | b"zTXt" | b"iTXt" if !data.starts_with(b"XML:com.adobe.xmp\0") => comfy.chunk(typ, data, crc),
             b"eXIf" => out.exif = Some(crate::strip_exif_header(data).to_vec()),
-            b"iTXt" if data.starts_with(b"XML:com.adobe.xmp\0") => {
-                // keyword\0 compression-flag compression-method language\0 translated\0 text
-                let rest = &data[18..];
-                if rest.len() >= 2 && rest[0] == 0 {
-                    let rest = &rest[2..];
-                    let mut parts = rest.splitn(3, |&c| c == 0);
-                    let (_, _, text) = (parts.next(), parts.next(), parts.next());
-                    if let Some(t) = text {
-                        out.xmp = Some(String::from_utf8_lossy(t).into_owned());
+            b"tEXt" | b"zTXt" | b"iTXt" => {
+                if let Some(field) = text.chunk(typ, data, crc) {
+                    if field.name == "XML:com.adobe.xmp" {
+                        out.xmp = Some(field.value);
+                    } else {
+                        comfy.field(&field);
                     }
                 }
             }
@@ -287,7 +284,10 @@ mod tests {
             p.extend_from_slice(&(data.len() as u32).to_be_bytes());
             p.extend_from_slice(typ);
             p.extend_from_slice(data);
-            p.extend_from_slice(&[0; 4]);
+            let mut crc = crc32fast::Hasher::new();
+            crc.update(typ);
+            crc.update(data);
+            p.extend_from_slice(&crc.finalize().to_be_bytes());
         };
         chunk(b"eXIf", &exif);
         let mut itxt = b"XML:com.adobe.xmp\0\0\0\0\0".to_vec();
@@ -297,6 +297,10 @@ mod tests {
         let m = crate::extract(&p);
         assert_eq!(m.iso, Some(400));
         assert_eq!(m.label.as_deref(), Some("Red"));
+        let mut corrupt = p.clone();
+        let at = corrupt.windows(3).position(|b| b == b"Red").unwrap();
+        corrupt[at] = b'B';
+        assert!(png_chunks(&corrupt).xmp.is_none(), "invalid text CRCs are rejected");
 
         let mut w = b"RIFF\0\0\0\0WEBP".to_vec();
         let mut body = |id: &[u8], data: &[u8]| {

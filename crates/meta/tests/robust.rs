@@ -12,6 +12,7 @@ proptest! {
             data[..h.len()].copy_from_slice(h);
         }
         let _ = extract(&data);
+        assert!(lightcraft_meta::search_metadata(&data).valid());
         let _ = read_exif(&data);
         let _ = parse_iptc(&data);
     }
@@ -35,6 +36,7 @@ proptest! {
         crc.update(&payload);
         png.extend_from_slice(&crc.finalize().to_be_bytes());
         let _ = extract(&png);
+        assert!(lightcraft_meta::search_metadata(&png).valid());
         let fields=lightcraft_meta::png_text_fields(&png);
         let _=lightcraft_meta::comfy_display_fields(&fields,None);
     }

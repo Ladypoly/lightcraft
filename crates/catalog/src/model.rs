@@ -167,9 +167,6 @@ pub fn parse_shutter_seconds(s: &str) -> Option<f64> {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Meta {
-    /// Read-only search index extracted from ComfyUI PNG text chunks, never written to XMP.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub comfy: Option<lightcraft_meta::ComfyMetadata>,
     pub camera: String,
     pub lens: String,
     pub focal_mm: Option<f32>,
@@ -226,6 +223,9 @@ pub struct HistoryStep {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Photo {
+    /// Rebuildable search data, loaded from the library cache; never part of catalog snapshots or ops.
+    #[serde(skip)]
+    pub metadata_search: Option<Arc<lightcraft_meta::SearchMetadata>>,
     pub id: PhotoId,
     pub source: Source,
     pub file_name: String,
@@ -365,6 +365,7 @@ impl Photo {
 
     pub fn new(id: PhotoId, source: Source, file_name: &str, format: &str, width: u32, height: u32, imported: &str) -> Photo {
         Photo {
+            metadata_search: None,
             id,
             source,
             file_name: file_name.to_string(),

@@ -20,7 +20,8 @@ pub enum RatingOp {
 #[serde(default, rename_all = "camelCase")]
 pub struct Filter {
     /// Free-text search: every token must match filename, title, caption, keywords, camera, lens,
-    /// location, format or ComfyUI metadata. Fielded tokens include `rating:3`, `iso:>800`,
+    /// location, format or indexed embedded metadata. Fielded tokens include `meta:cat`,
+    /// `meta:software=forge`, `rating:3`, `iso:>800`,
     /// `comfy:true`, `prompt:"neon city"`, `model:flux`, `lora:detail`, `seed:123` and `steps:>20`.
     pub text: String,
     pub rating: u8,
@@ -193,17 +194,18 @@ fn token_matches(p: &Photo, tok: &str) -> bool {
             None => false,
         };
         return match field {
+            "meta" | "metadata" => metadata_matches(p, val) || p.metadata_search.as_ref().is_some_and(|m| m.matches(val)),
             "comfy" => match val {
-                "true" | "yes" => p.meta.comfy.is_some(),
-                "false" | "no" => p.meta.comfy.is_none(),
+                "true" | "yes" => p.metadata_search.as_ref().is_some_and(|m| m.comfy),
+                "false" | "no" => !p.metadata_search.as_ref().is_some_and(|m| m.comfy),
                 _ => false,
             },
-            "prompt" | "positive" | "negative" => p.meta.comfy.as_ref().is_some_and(|m| {
+            "prompt" | "positive" | "negative" => p.metadata_search.as_ref().is_some_and(|m| {
                 let fields = if field == "prompt" { &["prompt", "positive", "negative"][..] } else { &[field][..] };
                 fields.iter().any(|f| m.values(f).any(|v| v.contains(val)))
             }),
             "model" | "lora" | "sampler" | "scheduler" | "vae" | "node" => {
-                p.meta.comfy.as_ref().is_some_and(|m| m.values(field).any(|v| v.contains(val)))
+                p.metadata_search.as_ref().is_some_and(|m| m.values(field).any(|v| v.contains(val)))
             }
             // Seeds are integers: f64 equality would conflate neighbouring seeds above 2^53.
             "seed" => val
@@ -211,10 +213,11 @@ fn token_matches(p: &Photo, tok: &str) -> bool {
                 .unwrap_or(val)
                 .parse::<u64>()
                 .ok()
-                .is_some_and(|seed| p.meta.comfy.as_ref().is_some_and(|m| m.values("seed").any(|v| v.parse::<u64>().ok() == Some(seed)))),
-            "steps" | "cfg" | "denoise" | "width" | "height" => {
-                p.meta.comfy.as_ref().is_some_and(|m| m.values(field).filter_map(|v| v.parse::<f64>().ok()).any(|v| v.is_finite() && cmp(v, val)))
-            }
+                .is_some_and(|seed| p.metadata_search.as_ref().is_some_and(|m| m.values("seed").any(|v| v.parse::<u64>().ok() == Some(seed)))),
+            "steps" | "cfg" | "denoise" | "width" | "height" => p
+                .metadata_search
+                .as_ref()
+                .is_some_and(|m| m.values(field).filter_map(|v| v.parse::<f64>().ok()).any(|v| v.is_finite() && cmp(v, val))),
             "rating" | "stars" => cmp(p.rating as f64, val),
             "flag" => Flag::parse(val) == Some(p.flag),
             "label" | "color" => p.label.is_some_and(|l| format!("{l:?}").eq_ignore_ascii_case(val)),
@@ -240,10 +243,50 @@ fn token_matches(p: &Photo, tok: &str) -> bool {
 /// Whether the lower-cased word `t` is in the file name, title, caption, camera, lens, location,
 /// format or a keyword of `p`.
 fn text_matches(p: &Photo, t: &str) -> bool {
-    let hay = [&p.file_name, &p.meta.title, &p.meta.caption, &p.meta.camera, &p.meta.lens, &p.meta.location, &p.format];
+    let hay = [
+        &p.file_name,
+        &p.meta.title,
+        &p.meta.caption,
+        &p.meta.camera,
+        &p.meta.lens,
+        &p.meta.location,
+        &p.format,
+        &p.meta.city,
+        &p.meta.state,
+        &p.meta.country,
+        &p.meta.creator,
+        &p.meta.copyright,
+        &p.meta.usage_terms,
+        &p.meta.copyright_url,
+        &p.meta.alt_text,
+        &p.meta.extended_description,
+        &p.meta.shutter,
+    ];
     hay.iter().any(|h| h.to_lowercase().contains(t))
         || p.meta.keywords.iter().any(|k| k.to_lowercase().contains(t))
-        || p.meta.comfy.as_ref().is_some_and(|m| m.contains(t))
+        || p.metadata_search.as_ref().is_some_and(|m| m.contains(t))
+}
+
+fn metadata_matches(p: &Photo, query: &str) -> bool {
+    let (key, value) = query.split_once('=').unwrap_or(("", query));
+    let fields = [
+        ("title", &p.meta.title),
+        ("caption", &p.meta.caption),
+        ("camera", &p.meta.camera),
+        ("lens", &p.meta.lens),
+        ("location", &p.meta.location),
+        ("city", &p.meta.city),
+        ("state", &p.meta.state),
+        ("country", &p.meta.country),
+        ("creator", &p.meta.creator),
+        ("copyright", &p.meta.copyright),
+        ("usage terms", &p.meta.usage_terms),
+        ("copyright url", &p.meta.copyright_url),
+        ("alt text", &p.meta.alt_text),
+        ("extended description", &p.meta.extended_description),
+    ];
+    fields.iter().any(|(name, text)| name.contains(key) && text.to_lowercase().contains(value))
+        || "keywords".contains(key) && p.meta.keywords.iter().any(|k| k.to_lowercase().contains(value))
 }
 
 /// Whether `p` has a named face region called `name` (case-insensitive).

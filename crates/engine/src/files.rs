@@ -17,7 +17,6 @@ fn meta_of(m: &lightcraft_meta::Metadata) -> (Meta, Option<String>) {
     let shutter = m.exposure_time.map(|t| if t >= 1.0 { format!("{t:.0}") } else { format!("1/{:.0}", 1.0 / t) }).unwrap_or_default();
     let camera = [m.make.clone().unwrap_or_default(), m.model.clone().unwrap_or_default()].join(" ").trim().to_string();
     let meta = Meta {
-        comfy: m.comfy.clone(),
         camera,
         // (a camera that writes no lens name, like Nikon's DSLRs, still says what range the lens covers)
         lens: m.lens_model.clone().or_else(|| m.lens_spec.and_then(lightcraft_meta::lens_spec_name)).unwrap_or_default(),
@@ -136,8 +135,9 @@ fn ext_upper(name: &str) -> String {
 /// compressed data that is all there: such a file imports and shows as unreadable when rendered).
 pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
     let content_hash = Some(lightcraft_preview::hash_bytes(bytes).to_string());
-    let m = lightcraft_meta::extract(bytes);
+    let (m, search) = lightcraft_meta::extract_with_search(bytes);
     let (meta, captured) = meta_of(&m);
+    let metadata_search = Some(Arc::new(search));
     if lightcraft_raw::probe(bytes).is_some() {
         let raw = match lightcraft_raw::probe_info(bytes).map_err(|e| preview_reason(bytes, e)) {
             Ok(r) => r,
@@ -152,6 +152,7 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
                     file_size: bytes.len() as u64,
                     captured,
                     meta,
+                    metadata_search,
                     as_shot_wb: None,
                     content_hash,
                     xmp: lightcraft_meta::embedded(bytes).xmp,
@@ -179,6 +180,7 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
             captured,
             file_modified: None,
             meta,
+            metadata_search,
             as_shot_wb,
             content_hash,
             xmp: lightcraft_meta::embedded(bytes).xmp,
@@ -211,6 +213,7 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
         captured,
         file_modified: None,
         meta,
+        metadata_search,
         as_shot_wb: None,
         content_hash,
         embedded_lens: None,

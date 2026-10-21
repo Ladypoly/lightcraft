@@ -35,18 +35,15 @@ pub(crate) struct PngIndex {
     fields: BTreeMap<String, BTreeSet<String>>,
     bytes: usize,
     visits: usize,
-    decoder: crate::png_text::Decoder,
     original: bool,
     found: bool,
 }
 
 impl PngIndex {
-    pub(crate) fn chunk(&mut self, typ: &[u8], data: &[u8], crc: &[u8]) {
-        let Some(keyword) = data.split(|b| *b == 0).next() else { return };
-        if !matches!(keyword, b"prompt" | b"workflow") {
+    pub(crate) fn field(&mut self, field: &crate::PngTextField) {
+        if !matches!(field.name.as_str(), "prompt" | "workflow") {
             return;
         }
-        let Some(field) = self.decoder.chunk(typ, data, crc) else { return };
         let Ok(graph) = serde_json::from_str::<Value>(&field.value) else { return };
         self.graph(&graph);
     }

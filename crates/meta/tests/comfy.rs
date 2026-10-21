@@ -45,6 +45,81 @@ fn has(m: &ComfyMetadata, field: &str, value: &str) -> bool {
 }
 
 #[test]
+fn general_search_reads_generator_text_custom_json_and_compressed_xmp() {
+    let xmp = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:Description xmlns:tool="https://example.org/annotations/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:lc="http://ns.lightcraft.app/lc/1.0/">
+<tool:tags><rdf:Bag><rdf:li>Cat</rdf:li><rdf:li>Chair</rdf:li></rdf:Bag></tool:tags>
+<dc:subject><rdf:Bag><rdf:li>Human keyword</rdf:li></rdf:Bag></dc:subject><lc:settings>private develop blob</lc:settings>
+</rdf:Description></rdf:RDF></x:xmpmeta>"#;
+    for typ in [b"tEXt", b"zTXt", b"iTXt"] {
+        let bytes = png(&[
+            (typ, "parameters", b"Church in a forest\nNegative prompt: blur\nSteps: 30, Model: Dreamshaper"),
+            (typ, "invokeai_metadata", br#"{"positive_prompt":"Moonlit lake","model":{"name":"SDXL"},"seed":42,"base64":"skip-me"}"#),
+            (typ, "XML:com.adobe.xmp", xmp.as_bytes()),
+        ]);
+        let index = lightcraft_meta::search_metadata(&bytes);
+        let (known, combined) = lightcraft_meta::extract_with_search(&bytes);
+        assert_eq!(known, extract(&bytes));
+        assert_eq!(combined, index);
+        assert!(!index.comfy);
+        for value in ["church", "forest", "dreamshaper", "moonlit lake", "sdxl", "42", "cat", "chair"] {
+            assert!(index.contains(value), "{value}: {index:?}");
+        }
+        assert!(index.matches("parameters=dreamshaper"));
+        assert!(!index.matches("parameters=sdxl"));
+        assert!(index.valid());
+        assert!(!index.contains("human keyword"), "catalog keywords must remain authoritative");
+        assert!(!index.contains("private develop blob"));
+        assert!(!index.contains("skip-me"));
+    }
+}
+
+#[test]
+fn general_search_reads_exif_software_serial_and_generator_user_comments() {
+    use lightcraft_tiff::{IfdBuilder, TiffWriter, Value};
+    for comment in [
+        [b"ASCII\0\0\0".as_slice(), b"Cat on a chair, Model: Flux"].concat(),
+        [b"UNICODE\0".as_slice(), "Cat on a chair, café".encode_utf16().flat_map(u16::to_be_bytes).collect::<Vec<_>>().as_slice()].concat(),
+        [b"UNICODE\0\xff\xfe".as_slice(), "Cat on a chair, café".encode_utf16().flat_map(u16::to_le_bytes).collect::<Vec<_>>().as_slice()].concat(),
+    ] {
+        let mut ifd = IfdBuilder::new();
+        ifd.set(0x0131, Value::Ascii("Forge Test Exporter".into()));
+        let mut exif = IfdBuilder::new();
+        exif.set(0xa431, Value::Ascii("CameraSerial123".into()));
+        exif.set(0x9286, Value::Undefined(comment));
+        ifd.set_child(0x8769, exif);
+        let bytes = TiffWriter::default().write(&[ifd]).unwrap();
+        let index = lightcraft_meta::search_metadata(&bytes);
+        assert!(index.contains("forge"));
+        assert!(index.matches("software=exporter"));
+        assert!(index.contains("cameraserial123"));
+        assert!(index.contains("cat on a chair"));
+    }
+}
+
+#[test]
+fn general_search_bounds_custom_metadata_and_replaces_sidecar_values() {
+    let big = format!(r#"{{"strings":[{}]}}"#, (0..1000).map(|i| format!("\"{i}{}\"", "x".repeat(100))).collect::<Vec<_>>().join(","));
+    let bytes = png(&[(b"zTXt", "custom", big.as_bytes()), (b"tEXt", "bad", b"{broken JSON")]);
+    let index = lightcraft_meta::search_metadata(&bytes);
+    assert!(index.valid());
+    assert!(index.byte_len() <= lightcraft_meta::SEARCH_BYTES);
+    assert!(!index.contains("broken"));
+    for n in (0..bytes.len()).step_by(7) {
+        assert!(lightcraft_meta::search_metadata(&bytes[..n]).valid());
+    }
+    let mut index = lightcraft_meta::SearchMetadata::default();
+    let packet = r#"<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:a="https://example.org/ai/" a:tags="Cat"/></rdf:RDF>"#;
+    index.replace_sidecar(Some(packet));
+    assert!(index.contains("cat"));
+    index.replace_sidecar(Some(&packet.replace("Cat", "Chair")));
+    assert!(!index.contains("cat"));
+    assert!(index.contains("chair"));
+    index.replace_sidecar(None);
+    assert!(!index.contains("chair"));
+}
+
+#[test]
 fn metadata_viewer_reads_generator_text_and_preserves_original_case() {
     let bytes = png(&[
         (b"tEXt", "prompt", API.as_bytes()),

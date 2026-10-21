@@ -656,4 +656,4 @@ Forks and modified versions must remove them.
 
 Library, Tools, and Presets panels can be regrouped, split, floated within the app window, closed, and reopened. Tools keeps the current Edit/Crop/Masking mode; the photo view and filmstrip stay together. Drag a panel header to a target edge or another header. Its context menu offers Float panel, Move to group, and Close panel. Existing panel toggles reopen panels at their saved location; Reset Panel Layout restores the app layout. Floating panels remain inside the current app window.
 
-ComfyUI generation parameters are indexed during import and Reload from Disk; see [metadata search](docs/comfyui-search.md).
+Readable embedded metadata (including generator parameters and external annotations) is indexed in a separate cache during import and Reload from Disk; see [metadata search](docs/metadata-search.md).

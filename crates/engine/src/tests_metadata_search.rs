@@ -1,4 +1,4 @@
-//! Import, upgrade, source replacement and durable ComfyUI search through public commands.
+//! Import, source refresh and disposable general metadata search through public commands.
 
 use lightcraft_catalog::{Filter, Op, PhotoId, Sort};
 use serde_json::json;
@@ -6,20 +6,209 @@ use serde_json::json;
 use crate::Session;
 
 fn png(prompt: Option<&str>, workflow: Option<&str>) -> Vec<u8> {
+    let fields: Vec<_> = prompt.map(|v| ("prompt", v)).into_iter().chain(workflow.map(|v| ("workflow", v))).collect();
+    text_png(&fields)
+}
+
+fn text_png(fields: &[(&str, &str)]) -> Vec<u8> {
     let mut bytes = Vec::new();
     {
         let mut enc = png::Encoder::new(&mut bytes, 2, 1);
         enc.set_color(png::ColorType::Rgb);
-        if let Some(prompt) = prompt {
-            enc.add_text_chunk("prompt".into(), prompt.into()).unwrap();
-        }
-        if let Some(workflow) = workflow {
-            enc.add_text_chunk("workflow".into(), workflow.into()).unwrap();
+        for (key, value) in fields {
+            enc.add_text_chunk((*key).into(), (*value).into()).unwrap();
         }
         let mut writer = enc.write_header().unwrap();
         writer.write_image_data(&[10, 20, 30, 40, 50, 60]).unwrap();
     }
     bytes
+}
+
+#[test]
+fn general_cache_is_disposable_and_never_changes_catalog_format_or_originals() {
+    let dir = crate::tests_xmp::temp_dir("general-metadata-cache");
+    let path = dir.join("ordinary.png");
+    let library = dir.join("library");
+    let original = text_png(&[("parameters", "Cat sitting on a chair, stained glass church"), ("Software", "External Tagger")]);
+    std::fs::write(&path, &original).unwrap();
+    let mut s = Session::new().with_fs();
+    s.open_library(&library, false).unwrap();
+    s.execute("library.import", &json!({"paths": [path]})).unwrap();
+    let id = s.catalog.photos().next().unwrap().id;
+    for text in ["cat chair", "CHURCH", "meta:cat meta:chair", "meta:software=external", "meta:\"parameters=stained glass\"", "cat rating:0"] {
+        assert_eq!(query(&s, text), vec![id], "{text}");
+    }
+    assert!(s.catalog.photo(id).unwrap().meta.keywords.is_empty());
+    assert!(query(&s, "keyword:cat").is_empty());
+    s.close_library().unwrap();
+    drop(s);
+    let snapshot = std::fs::read(library.join("catalog.snap")).unwrap();
+    let snapshot_text = String::from_utf8_lossy(&snapshot);
+    assert!(snapshot_text.contains("\"version\":9"));
+    assert!(!snapshot_text.contains("metadata_search"));
+    assert!(!snapshot_text.contains("stained glass"));
+    assert!(!snapshot_text.contains("\"comfy\""));
+    let cache = library.join(crate::metadata_cache::FILE);
+    assert!(cache.is_file());
+    // Missing, malformed and unknown-version caches all remain safe to delete and rebuild.
+    for broken in [None, Some("{broken cache\n"), Some("{\"version\":999}\n")] {
+        if let Some(broken) = broken {
+            std::fs::write(&cache, broken).unwrap();
+        } else {
+            std::fs::remove_file(&cache).unwrap();
+        }
+        let mut s = Session::new().with_fs();
+        s.open_library(&library, false).unwrap();
+        assert!(query(&s, "stained glass").is_empty());
+        s.execute("photo.reload", &json!({"ids": [id.0]})).unwrap();
+        assert_eq!(query(&s, "cat chair").len(), 1);
+        assert_eq!(std::fs::read(library.join("catalog.snap")).unwrap(), snapshot);
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        assert!(!path.with_extension("xmp").exists());
+    }
+    // Searches and reopen work with offline originals; no probe is needed.
+    std::fs::remove_file(&path).unwrap();
+    let mut s = Session::new().with_fs();
+    s.open_library(&library, false).unwrap();
+    s.media.file_probe = Some(std::sync::Arc::new(|_| Err("search must never probe".into())));
+    assert_eq!(query(&s, "cat chair"), vec![id]);
+    drop(s);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn cache_write_failure_does_not_block_catalog_edits_and_retries() {
+    let dir = crate::tests_xmp::temp_dir("metadata-cache-write-failure");
+    let path = dir.join("image.png");
+    let library = dir.join("library");
+    std::fs::write(&path, text_png(&[("Comment", "Cat and chair")])).unwrap();
+    let mut s = Session::new().with_fs();
+    s.open_library(&library, false).unwrap();
+    let cache = library.join(crate::metadata_cache::FILE);
+    // A directory at the cache name makes atomic replacement fail on every supported OS.
+    std::fs::create_dir(&cache).unwrap();
+    s.execute("library.import", &json!({"paths": [path]})).unwrap();
+    let id = s.catalog.photos().next().unwrap().id;
+    s.execute("photo.rate", &json!({"ids": [id.0], "rating": 5})).unwrap();
+    assert_eq!(s.unsaved(), None);
+    assert_eq!(query(&s, "cat chair rating:5"), vec![id]);
+    std::fs::remove_dir(&cache).unwrap();
+    s.persist().unwrap();
+    assert!(cache.is_file());
+    drop(s);
+    let mut s = Session::new().with_fs();
+    s.open_library(&library, false).unwrap();
+    assert_eq!(query(&s, "cat chair rating:5"), vec![id]);
+    drop(s);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn cache_append_recovers_after_a_torn_tail_and_switching_libraries_does_not_leak_entries() {
+    let dir = crate::tests_xmp::temp_dir("metadata-cache-torn-tail");
+    let path = dir.join("image.png");
+    let library = dir.join("library");
+    std::fs::write(&path, text_png(&[("Comment", "Cat and chair")])).unwrap();
+    let mut s = Session::new().with_fs();
+    s.open_library(&library, false).unwrap();
+    s.execute("library.import", &json!({"paths": [path]})).unwrap();
+    let id = s.catalog.photos().next().unwrap().id;
+    drop(s);
+    let cache = library.join(crate::metadata_cache::FILE);
+    use std::io::Write;
+    std::fs::OpenOptions::new().append(true).open(&cache).unwrap().write_all(b"{\"id\":").unwrap();
+    let mut s = Session::new().with_fs();
+    s.open_library(&library, false).unwrap();
+    assert_eq!(query(&s, "cat chair"), vec![id]);
+    let second = dir.join("second.png");
+    std::fs::write(&second, text_png(&[("Comment", "Dog and sofa")])).unwrap();
+    s.execute("library.import", &json!({"paths": [second]})).unwrap();
+    assert_eq!(query(&s, "dog sofa").len(), 1);
+    s.open_library(dir.join("other"), false).unwrap();
+    assert!(query(&s, "cat chair").is_empty());
+    s.open_library(&library, false).unwrap();
+    assert_eq!(query(&s, "cat chair"), vec![id]);
+    assert_eq!(query(&s, "dog sofa").len(), 1);
+    drop(s);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn source_refresh_and_relink_replace_cached_values_without_overwriting_user_edits() {
+    let dir = crate::tests_xmp::temp_dir("general-metadata-replace");
+    let path = dir.join("image.png");
+    let library = dir.join("library");
+    std::fs::write(&path, text_png(&[("parameters", "Cat on chair")])).unwrap();
+    let mut s = Session::new().with_fs();
+    s.open_library(&library, false).unwrap();
+    s.execute("library.import", &json!({"paths": [path]})).unwrap();
+    let id = s.catalog.photos().next().unwrap().id;
+    s.execute("photo.setMeta", &json!({"ids": [id.0], "title": "My own title"})).unwrap();
+    drop(s);
+    std::fs::write(&path, text_png(&[("parameters", "Dog on sofa")])).unwrap();
+    let file = std::fs::File::options().write(true).open(&path).unwrap();
+    file.set_times(std::fs::FileTimes::new().set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(3))).unwrap();
+    drop(file);
+    let mut s = Session::new().with_fs();
+    s.open_library(&library, false).unwrap();
+    assert_eq!(query(&s, "cat chair"), vec![id], "external changes wait for explicit refresh");
+    assert_eq!(query(&s, "my own title"), vec![id]);
+    s.execute("photo.reload", &json!({"ids": [id.0]})).unwrap();
+    assert_eq!(query(&s, "dog sofa"), vec![id]);
+    assert!(query(&s, "cat").is_empty());
+    assert_eq!(s.catalog.photo(id).unwrap().meta.title, "My own title");
+    drop(s);
+    let mut s = Session::new().with_fs();
+    s.open_library(&library, false).unwrap();
+    assert_eq!(query(&s, "dog sofa"), vec![id]);
+    let replacement = dir.join("replacement.png");
+    std::fs::write(&replacement, text_png(&[("Comment", "Forest lake")])).unwrap();
+    s.execute("photo.relink", &json!({"id": id.0, "path": replacement})).unwrap();
+    assert_eq!(query(&s, "forest lake"), vec![id]);
+    assert!(query(&s, "dog sofa").is_empty());
+    assert_eq!(s.catalog.photo(id).unwrap().meta.title, "My own title");
+    drop(s);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn custom_xmp_tags_search_without_keywords_and_refresh_after_external_or_automatic_writes() {
+    let dir = crate::tests_xmp::temp_dir("general-metadata-sidecar");
+    let path = dir.join("image.png");
+    let sidecar = path.with_extension("xmp");
+    let library = dir.join("library");
+    let packet = r#"<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:ai="https://example.org/ai/">
+<ai:tags><rdf:Bag><rdf:li>Cat</rdf:li><rdf:li>Chair</rdf:li></rdf:Bag></ai:tags></rdf:Description></rdf:RDF>"#;
+    std::fs::write(&path, text_png(&[("parameters", "Moonlit forest")])).unwrap();
+    std::fs::write(&sidecar, packet).unwrap();
+    let mut s = Session::new().with_fs();
+    s.open_library(&library, false).unwrap();
+    s.execute("library.import", &json!({"paths": [path]})).unwrap();
+    let id = s.catalog.photos().next().unwrap().id;
+    assert_eq!(query(&s, "cat chair forest"), vec![id]);
+    assert!(s.catalog.photo(id).unwrap().meta.keywords.is_empty());
+    drop(s);
+    std::fs::write(&sidecar, packet.replace("Chair", "Sofa")).unwrap();
+    let file = std::fs::File::options().write(true).open(&sidecar).unwrap();
+    file.set_times(std::fs::FileTimes::new().set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(3))).unwrap();
+    drop(file);
+    let mut s = Session::new().with_fs();
+    s.open_library(&library, false).unwrap();
+    assert_eq!(query(&s, "chair"), vec![id], "external sidecar edits wait for explicit refresh");
+    assert_eq!(query(&s, "forest"), vec![id]);
+    s.execute("photo.readMetadataFromFile", &json!({"ids": [id.0]})).unwrap();
+    assert_eq!(query(&s, "cat sofa"), vec![id]);
+    assert!(query(&s, "chair").is_empty());
+    assert!(query(&s, "keyword:cat").is_empty());
+    s.execute("library.xmpPreferences", &json!({"autoWrite": true})).unwrap();
+    s.execute("photo.setMeta", &json!({"ids": [id.0], "title": "My title"})).unwrap();
+    drop(s);
+    let mut s = Session::new().with_fs();
+    s.open_library(&library, false).unwrap();
+    assert_eq!(query(&s, "cat sofa forest"), vec![id]);
+    assert!(s.catalog.photo(id).unwrap().meta.keywords.is_empty());
+    drop(s);
+    std::fs::remove_dir_all(dir).unwrap();
 }
 
 fn query(s: &Session, text: &str) -> Vec<PhotoId> {
@@ -105,12 +294,10 @@ fn comfy_import_reindex_reopen_and_replace_sources() {
     s.execute("develop.set", &json!({"control": "light.exposure", "value": 0.5})).unwrap();
 
     // A persisted record from before generation metadata was extracted, with unchanged source bytes.
-    let mut old = s.catalog.photo(id).unwrap().meta.clone();
-    old.comfy = None;
-    s.commit("Old metadata fixture", Op::SetMeta { id, meta: Box::new(old) }).unwrap();
     s.persist().unwrap();
     let hash = s.catalog.photo(id).unwrap().content_hash.clone();
     drop(s);
+    std::fs::remove_file(library.join(crate::metadata_cache::FILE)).unwrap();
     let mut s = Session::new().with_fs();
     s.open_library(&library, false).unwrap();
     assert!(query(&s, "comfy:true").is_empty());
@@ -127,7 +314,7 @@ fn comfy_import_reindex_reopen_and_replace_sources() {
     assert_eq!(std::fs::read(&path).unwrap(), original);
     assert!(!path.with_extension("xmp").exists(), "reindex never auto-writes sidecars");
     let r = s.execute("photo.reload", &json!({"ids": [id.0]})).unwrap();
-    assert_eq!(r["reloaded"], json!([]), "unchanged metadata is not journalled twice");
+    assert_eq!(r["reloaded"], json!([]), "unchanged sources and index are not reported twice");
     drop(s);
     let mut s = Session::new().with_fs();
     s.open_library(&library, false).unwrap();
@@ -193,6 +380,7 @@ fn comfy_uses_existing_library_filter_and_catalog_query_commands() {
     let id = s.catalog.alloc_photo_id();
     let mut p = lightcraft_catalog::Photo::new(id, lightcraft_catalog::Source::Demo { scene: 0 }, "generated.png", "PNG", 2, 1, "2026-10-18");
     p.meta = info.meta;
+    p.metadata_search = info.metadata_search;
     s.catalog.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
     let text = "comfy:true prompt:\"NEON CITY\" model:flux steps:>20 cfg:>5";
     s.execute("library.filter", &json!({"text": text})).unwrap();

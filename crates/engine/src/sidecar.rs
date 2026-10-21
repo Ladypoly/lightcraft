@@ -667,6 +667,7 @@ impl Session {
         let (data, merged, backup) = sidecar_contents(&path, sidecar_packet(p, &self.catalog), &(self.clock)()).map_err(err)?;
         write_atomic(&path, data.as_bytes()).map_err(err)?;
         self.note_sidecar_write(&path, data.as_bytes());
+        self.refresh_sidecar_search(id, naming);
         Ok(SidecarSaved { path, merged, backup })
     }
 

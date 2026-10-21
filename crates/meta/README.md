@@ -19,6 +19,19 @@ Photo metadata: EXIF, XMP (read + write), IPTC-IIM, and the containers that carr
 35 mm equivalent, flash, exposure bias, program, metering, white balance), orientation, GPS, dimensions and the
 user fields (artist, copyright, title, caption, keywords, hierarchical keywords, rating −1…5, colour label).
 
+## General search index
+
+`extract_with_search(bytes)` shares container / graph parsing with import metadata extraction.
+`search_metadata(bytes)` returns a derived `SearchMetadata` index for readable EXIF/TIFF/GPS rows,
+PNG text, scalar JSON and custom XMP properties. `replace_sidecar(packet)` updates the sidecar
+portion separately. Standard editable XMP fields stay in the catalog, so clearing a keyword
+cannot leave a hidden stale copy. Opaque develop settings and binary data are excluded.
+
+The combined index has a 16 KiB key/value budget, 4 KiB per value, 512 keys, 24 JSON traversal
+levels and 10,000 visits. `valid()` checks cache entries against these bounds. Values are
+lower-cased during extraction; ordinary search performs substring matching only. Storage is
+an engine-owned disposable cache, never a new catalog format field.
+
 ## ComfyUI PNG metadata
 
 `extract` and `png_chunks` also return a read-only `ComfyMetadata` index from CRC-valid
@@ -30,13 +43,13 @@ node types and unfamiliar parameter values are indexed. Unknown positional custo
 remain available to free-text search; their field meanings cannot be inferred reliably.
 
 Values are lower-cased and deduplicated within each field; raw graphs are discarded. Limits:
-4 MiB per text chunk and decompressed JSON, at most 32 matching chunks and about 8 MiB of
+4 MiB per text chunk and decompressed JSON, at most 32 text chunks and about 8 MiB of
 decoded text per PNG, 30,000 nodes / parameter visits, 32 levels of parameter traversal,
 8 KiB per indexed string and a 64 KiB aggregate index budget (before serialization overhead).
 JSON parsing retains serde_json's recursion limit. Invalid or excessive metadata is ignored
 without blocking the photo's import. Generation data is never written to XMP.
 
-Catalog integration and user searches: [ComfyUI metadata search](../../docs/comfyui-search.md).
+Catalog integration and user searches: [Metadata search](../../docs/metadata-search.md).
 
 Standard widget names and ordering were checked against the
 [ComfyUI node definitions](https://github.com/Comfy-Org/ComfyUI/blob/master/nodes.py) and
@@ -46,8 +59,7 @@ Standard widget names and ordering were checked against the
 
 Written: `dc`, `xmp`, `photoshop`, `exif`, `exifEX`, `tiff`, `lr` (`hierarchicalSubject`) and ours,
 `lc` = `http://ns.lightcraft.app/lc/1.0/` (`lc:settings`, an opaque JSON string).
-`write_xmp_lc_values` also writes structured RDF bags/resources for the engine’s separate `lc:aiTags`
-annotations (schema: [XMP interchange](../../docs/xmp-interop.md#ai-tags)). Reading canonicalises
+Reading canonicalises
 prefixes by namespace URI, handles attribute and element forms, `rdf:Seq`/`Bag`/`Alt` (x-default first),
 `rdf:parseType="Resource"` and nested-description structs, predefined and numeric entities. Nesting depth
 and node count are limited.
@@ -69,4 +81,4 @@ blocks). XML parsing: `quick-xml` (MIT). No third-party metadata code was consul
 `png_text_fields(bytes)` reads original PNG tEXt/zTXt/iTXt values, regardless of generator,
 with CRC, chunk-count and decompression bounds shared with the ComfyUI indexer.
 `comfy_display_fields(fields, dimensions)` returns readable original-case fields for the metadata
-viewer; it does not store workflow JSON in the catalog. See `docs/comfyui-search.md` for viewer caps.
+viewer; it does not store workflow JSON in the catalog. See `docs/metadata-search.md` for viewer caps.
