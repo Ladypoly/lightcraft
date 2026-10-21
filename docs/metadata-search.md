@@ -12,13 +12,13 @@ metadata are searchable through ordinary text and `meta:`; their format-specific
 are not inferred.
 
 | Search | Matches |
+|---|---|
 | `cat chair` | Both terms anywhere in saved metadata or the derived index |
 | `"moonlit forest"` | A phrase, including in non-ComfyUI generator text |
 | `meta:cat` | A metadata value or property name |
 | `meta:software=forge` | A property containing `software` whose value contains `forge` |
 | `meta:"tags=living room"` | Custom XMP / JSON tag values containing this phrase |
 | `meta:city=berlin` | The catalog’s saved city |
-|---|---|
 | `comfy:true` | Images with a recognized ComfyUI graph |
 | `comfy:false` | Images without indexed ComfyUI metadata |
 | `prompt:cyberpunk` | Positive, negative or unclassified generation prompt text |

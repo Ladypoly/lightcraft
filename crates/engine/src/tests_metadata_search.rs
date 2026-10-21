@@ -216,6 +216,53 @@ fn query(s: &Session, text: &str) -> Vec<PhotoId> {
 }
 
 #[test]
+fn sidecar_saves_refresh_virtual_copy_search_and_persist_without_overwriting_copy_edits() {
+    let dir = crate::tests_xmp::temp_dir("metadata-copy-sidecar");
+    let path = dir.join("image.png");
+    let sidecar = path.with_extension("xmp");
+    let library = dir.join("library");
+    let original = text_png(&[("parameters", "Moonlit forest")]);
+    let packet = r#"<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:ai="https://example.org/ai/">
+<ai:tags><rdf:Bag><rdf:li>Cat</rdf:li><rdf:li>Chair</rdf:li></rdf:Bag></ai:tags></rdf:Description></rdf:RDF>"#;
+    std::fs::write(&path, &original).unwrap();
+    std::fs::write(&sidecar, packet).unwrap();
+    let mut s = Session::new().with_fs();
+    s.open_library(&library, false).unwrap();
+    s.execute("library.import", &json!({"paths": [path]})).unwrap();
+    let id = s.catalog.photos().next().unwrap().id;
+    let made = s.execute("photo.virtualCopy", &json!({"ids": [id.0]})).unwrap();
+    let copy = PhotoId(made["ids"][0].as_u64().unwrap());
+    s.execute("photo.setMeta", &json!({"ids": [copy.0], "title": "Copy title", "keywords": ["Personal"]})).unwrap();
+    assert_eq!(query(&s, "meta:tags=chair").len(), 2);
+
+    for (auto, tag, stale) in [(false, "Sofa", "Chair"), (true, "Table", "Sofa")] {
+        std::fs::write(&sidecar, packet.replace("Chair", tag)).unwrap();
+        if auto {
+            s.execute("library.xmpPreferences", &json!({"autoWrite": true})).unwrap();
+            s.execute("photo.setMeta", &json!({"ids": [id.0], "title": "Original title"})).unwrap();
+        } else {
+            let saved = s.execute("photo.saveMetadataToFile", &json!({"ids": [id.0]})).unwrap();
+            assert_eq!(saved["failed"], json!([]));
+        }
+        assert_eq!(query(&s, &format!("meta:tags={tag} forest")).len(), 2);
+        assert!(query(&s, &format!("meta:tags={stale}")).is_empty());
+        assert_eq!(s.catalog.photo(copy).unwrap().meta.title, "Copy title");
+        assert_eq!(s.catalog.photo(copy).unwrap().meta.keywords, ["Personal"]);
+    }
+    s.persist().unwrap();
+    drop(s);
+    let mut s = Session::new().with_fs();
+    s.open_library(&library, false).unwrap();
+    assert_eq!(query(&s, "meta:tags=table forest").len(), 2);
+    assert!(query(&s, "meta:tags=chair").is_empty());
+    assert_eq!(s.catalog.photo(copy).unwrap().meta.title, "Copy title");
+    assert_eq!(s.catalog.photo(copy).unwrap().meta.keywords, ["Personal"]);
+    assert_eq!(std::fs::read(&path).unwrap(), original);
+    drop(s);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn external_xmp_keywords_import_refresh_and_search_with_generation_metadata() {
     let dir = crate::tests_xmp::temp_dir("comfy-external-keywords");
     let file = dir.join("generated.png");

@@ -568,9 +568,13 @@ impl Catalog {
         if self.photo(id).is_some_and(|p| p.metadata_search == metadata) {
             return Ok(());
         }
+        if self.changes.seen != self.revision {
+            self.changes = Changes { floor: self.revision, seen: self.revision, ..Default::default() };
+        }
         self.changes.now = Aspects::META;
         self.photo_mut(id)?.metadata_search = metadata;
         self.revision = self.revision.wrapping_add(1);
+        self.changes.seen = self.revision;
         Ok(())
     }
 

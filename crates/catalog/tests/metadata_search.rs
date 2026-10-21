@@ -24,6 +24,41 @@ fn query(c: &Catalog, text: &str) -> Vec<PhotoId> {
 }
 
 #[test]
+fn derived_metadata_tracks_incremental_queries_and_loaded_revisions() {
+    use lightcraft_catalog::Aspects;
+
+    let mut c = Catalog::new();
+    c.apply(Op::AddPhoto { photo: Box::new(photo(1)) }).unwrap();
+    c.apply(Op::AddPhoto { photo: Box::new(photo(2)) }).unwrap();
+    let filter = Filter { text: "model:flux".into(), ..Default::default() };
+    let sort = Sort::default();
+    let was = c.query(&filter, &sort);
+    let before = c.revision;
+    let index = Some(Arc::new(metadata()));
+    c.set_metadata_search(PhotoId(1), index.clone()).unwrap();
+    assert_eq!(c.touched_since(before), Some(vec![PhotoId(1)]));
+    assert_eq!(c.aspects_since(before), Some(Aspects::META));
+    assert_eq!(c.follow(&was, &c.touched_since(before).unwrap(), &filter, &sort, None), vec![PhotoId(1)]);
+    c.apply(Op::SetRating { id: PhotoId(2), rating: 4 }).unwrap();
+    assert_eq!(c.touched_since(before), Some(vec![PhotoId(1), PhotoId(2)]));
+    assert_eq!(c.aspects_since(before), Some(Aspects::META.with(Aspects::RATING)));
+
+    // Library loading assigns a fresh revision range; old query caches must stay invalid.
+    let old = c.revision;
+    c.revision = 7 << 32;
+    let loaded = c.revision;
+    c.set_metadata_search(PhotoId(1), None).unwrap();
+    assert_eq!(c.touched_since(old), None);
+    assert_eq!(c.aspects_since(old), None);
+    assert_eq!(c.touched_since(loaded), Some(vec![PhotoId(1)]));
+    assert_eq!(c.aspects_since(loaded), Some(Aspects::META));
+    assert!(c.query(&filter, &sort).is_empty());
+    let unchanged = c.revision;
+    c.set_metadata_search(PhotoId(1), None).unwrap();
+    assert_eq!(c.revision, unchanged);
+}
+
+#[test]
 fn comfy_free_text_fields_phrases_and_combined_filters() {
     let mut c = Catalog::new();
     let mut p = photo(1);
