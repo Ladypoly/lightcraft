@@ -27,6 +27,48 @@ fn query(s: &Session, text: &str) -> Vec<PhotoId> {
 }
 
 #[test]
+fn external_xmp_keywords_import_refresh_and_search_with_generation_metadata() {
+    let dir = crate::tests_xmp::temp_dir("comfy-external-keywords");
+    let file = dir.join("generated.png");
+    let sidecar = file.with_extension("xmp");
+    let library = dir.join("library");
+    let original = png(Some(include_str!("../../meta/tests/fixtures/comfy-api.json")), None);
+    std::fs::write(&file, &original).unwrap();
+    let xmp = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/">
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+<rdf:Description xmlns:dc="http://purl.org/dc/elements/1.1/">
+<dc:subject><rdf:Bag><rdf:li>cat</rdf:li><rdf:li>chair</rdf:li><rdf:li>living room</rdf:li></rdf:Bag></dc:subject>
+</rdf:Description></rdf:RDF></x:xmpmeta>"#;
+    std::fs::write(&sidecar, xmp).unwrap();
+    let mut s = Session::new().with_fs();
+    s.open_library(&library, false).unwrap();
+    s.execute("library.import", &json!({"paths": [file]})).unwrap();
+    let id = s.catalog.photos().next().unwrap().id;
+    for text in ["cat chair", "keyword:cat keyword:chair", "CAT CHAIR", "comfy:true model:flux \"living room\""] {
+        assert_eq!(query(&s, text), vec![id], "{text}");
+    }
+
+    let updated = xmp.replace("chair", "sofa");
+    std::fs::write(&sidecar, &updated).unwrap();
+    s.execute("library.xmpPreferences", &json!({"autoWrite": true})).unwrap();
+    let result = s.execute("photo.readMetadataFromFile", &json!({"ids": [id.0]})).unwrap();
+    assert_eq!(result["failed"], json!([]));
+    assert_eq!(result["read"].as_array().unwrap().len(), 1);
+    assert!(query(&s, "cat chair").is_empty());
+    assert_eq!(query(&s, "comfy:true model:flux keyword:cat keyword:sofa"), vec![id]);
+    assert_eq!(std::fs::read(&file).unwrap(), original);
+    assert_eq!(std::fs::read_to_string(&sidecar).unwrap(), updated);
+    s.persist().unwrap();
+    drop(s);
+    let mut reopened = Session::new().with_fs();
+    reopened.open_library(&library, false).unwrap();
+    assert_eq!(query(&reopened, "comfy:true cat sofa"), vec![id]);
+    assert!(query(&reopened, "keyword:chair").is_empty());
+    drop(reopened);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn all_metadata_includes_raw_png_generation_fields_and_readable_summary() {
     let dir = crate::tests_xmp::temp_dir("comfy-viewer");
     let file = dir.join("generated.png");
